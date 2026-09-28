@@ -25,13 +25,13 @@ Specify is a comprehensive logistics management system designed specifically for
 
 Six specialized dashboard views tailored to the workflow of different teams:
 
-| Role                 | Key Features                                          |
-| -------------------- | ------------------------------------------------- |
-| **Customer Service** | Order creation, AI extraction, customer inquiries, order edits |
-| **Warehouse**        | Queue management, out-of-stock handling, inventory/stock tracking |
-| **FOM**              | (Field Operations Manager) Order fulfillment, dispatch, route planning |
-| **Accounting**       | Payment confirmations, invoices, rider payments, reconciliation |
-| **Admin**            | Global analytics, user management, system settings |
+| Role                 | Key Features                                                                     |
+| -------------------- | -------------------------------------------------------------------------------- |
+| **Customer Service** | Order creation, AI extraction, customer inquiries, order edits                   |
+| **Warehouse**        | Queue management, out-of-stock handling, inventory/stock tracking                |
+| **FOM**              | (Field Operations Manager) Order fulfillment, dispatch, route planning           |
+| **Accounting**       | Payment confirmations, invoices, rider payments, reconciliation                  |
+| **Admin**            | Global analytics, user management, system settings                               |
 | **Merchant**         | External merchant portal for viewing stock, approvals, and their specific orders |
 
 ## 📁 Project Structure
@@ -43,11 +43,11 @@ rachamhub/
 │   ├── login/                   # User Login pages
 │   ├── merchant/                # Merchant portal pages
 │   └── dashboard/               # Core application dashboards
-│       ├── customer_service/    
-│       ├── warehouse/           
-│       ├── fom/                 
-│       ├── accounting/          
-│       └── admin/               
+│       ├── customer_service/
+│       ├── warehouse/
+│       ├── fom/
+│       ├── accounting/
+│       └── admin/
 ├── components/                  # Reusable UI components (shadcn/ui, Data Tables, etc.)
 ├── hooks/                       # Custom React hooks (Supabase Realtime, etc.)
 ├── lib/                         # Utilities and Supabase client config
@@ -59,39 +59,48 @@ rachamhub/
 ### 1. Install dependencies
 
 ```bash
-pnpm install
+npm install
 ```
 
 ### 2. Configure Environment Variables
 
-Copy the `.env.local.example` file and configure your keys:
+Copy the `.env.example` file and configure your keys:
 
 ```bash
-cp .env.local.example .env.local
+cp .env.example .env.local
 ```
 
 Add your keys to `.env.local`:
+
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-GOOGLE_GEMINI_API_KEY=your-gemini-api-key
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Google Gemini AI API Key
+# Get this from: https://aistudio.google.com/app/apikey
+GOOGLE_GEMINI_API_KEY=
+
+# USER DEFAULT PASSWORD
+DEFAULT_USER_PASSWORD=
 ```
 
 ### 3. Database Setup
 
-Run `sql/supabase-init.sql` in the Supabase SQL editor to create the `users`, `orders`, `merchants`, `landmarks`, and `riders` tables, setup Row Level Security (RLS) policies, triggers, and insert demo data. 
-*Note: After creating Auth users in Supabase, ensure profile rows in `public.users` match the Supabase Auth user `id` values.*
+Run `sql/db.sql` in the Supabase SQL editor to create the `users`, `orders`, `merchants`, `landmarks`, and `riders` tables, setup Row Level Security (RLS) policies, triggers, and insert demo data.
+_Note: After creating Auth users in Supabase, ensure profile rows in `public.users` match the Supabase Auth user `id` values._
 
 ### 4. Run the Development Server
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
 ## 🤝 Support
 
 If you encounter issues, verify that:
+
 - Your `NEXT_PUBLIC_SUPABASE_*` environment variables are correctly set.
 - Supabase Auth users exist for the demo emails.
 - The `id` field in the `public.users` table perfectly matches the Supabase Auth user IDs.
