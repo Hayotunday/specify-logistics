@@ -74,7 +74,7 @@ create type public.role as enum(
 -- ------------------------------------------------------------
 -- 3a. Independent tables (no FK references to other app tables)
 create table public.users (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   email text,
   display_name text,
   is_active boolean,
@@ -86,7 +86,7 @@ create table public.users (
 );
 
 create table public.landmarks (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   name text,
   price numeric(12, 2),
   is_active boolean,
@@ -95,7 +95,7 @@ create table public.landmarks (
 );
 
 create table public.riders (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   name text,
   phone text,
   is_active boolean,
@@ -111,7 +111,7 @@ create table public.settings (
 );
 
 create table public.customer_inquiries (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   customer_name text,
   customer_email text,
   subject text,
@@ -123,7 +123,7 @@ create table public.customer_inquiries (
 
 -- 3b. Tables that reference users
 create table public.merchant_access_keys (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   role text,
   access_key text,
   created_at timestamp with time zone,
@@ -132,7 +132,7 @@ create table public.merchant_access_keys (
 
 -- 3c. Tables that reference users and merchant_access_keys
 create table public.merchants (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   name text,
   is_active boolean,
   created_at timestamp with time zone,
@@ -147,7 +147,7 @@ create table public.merchants (
 
 -- 3d. Tables that reference merchants and merchant_access_keys
 create table public.products (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   merchant_id uuid,
   name text,
   price numeric,
@@ -163,7 +163,7 @@ create table public.products (
 
 -- 3e. Tables that reference users, merchants, riders, and landmarks
 create table public.orders (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   customer_name text,
   delivery_address text,
   phone_numbers jsonb,
@@ -199,7 +199,7 @@ create table public.orders (
 
 -- 3f. Tables that reference merchants, products, users, and merchant_access_keys
 create table public.stock_entries (
-  id uuid not null,
+  id uuid not null default gen_random_uuid(),
   merchant_id uuid,
   product_id uuid,
   quantity integer,
@@ -528,8 +528,11 @@ create trigger stock_entries_set_updated_at
 before update on public.stock_entries for each row
 execute procedure public.set_updated_at ();
 
+
 -- get_global_stats function
+drop function if exists get_global_stats ();
 drop function if exists get_global_stats (text);
+drop function if exists get_global_stats (uuid);
 
 create or replace function get_global_stats (fom_user_id uuid default null) returns json as $$
 declare
@@ -551,7 +554,7 @@ begin
     'accounting_confirmed', count(o.id) filter (where o.payment_confirmed = true)
   ) into result
   from orders o
-  left join landmarks l on o.landmark = l.name;
+  left join landmarks l on o.landmark = l.id;
   
   return result;
 end;
