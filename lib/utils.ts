@@ -39,7 +39,7 @@ const getOrders = async (startDate?: Date, endDate?: Date) => {
   let query = supabase!
     .from("orders")
     .select(
-      "id, created_at, customer_name, phone_numbers, delivery_address, items, total_amount, merchant, inventory_status, wh_delivery_status, fom_assigned, fom_assigned_at, rider_name, payment_to_rider, rider_assigned_at, fom_delivery_status, landmark, payment_method, bank, quantity_delivered, amount_paid, payment_confirmed, payment_verified_at, payment_to_merchant, cc_comment, warehouse_comment, fom_comment, extracted_by",
+      "id, created_at, customer_name, phone_numbers, delivery_address, items, total_amount, merchant, inventory_status, wh_delivery_status, fom_assigned, fom_assigned_at, rider, payment_to_rider, rider_assigned_at, fom_delivery_status, landmark, payment_method, bank, quantity_delivered, amount_paid, payment_confirmed, payment_verified_at, payment_to_merchant, cc_comment, wh_comment, fom_comment, extracted_by",
     );
 
   if (startDate) {
@@ -52,18 +52,24 @@ const getOrders = async (startDate?: Date, endDate?: Date) => {
     query = query.lte("created_at", end.toISOString());
   }
 
-  const { data, error: fetchError } = await query
-    .order("created_at", { ascending: false })
-    .limit(10000);
-
-  const { data: landmarksData } = await supabase!
-    .from("landmarks")
-    .select("name, price");
+  const [
+    { data, error: fetchError },
+    { data: landmarksData },
+    { data: merchantsData },
+    { data: ridersData },
+  ] = await Promise.all([
+    query.order("created_at", { ascending: false }).limit(10000),
+    supabase!.from("landmarks").select("id, name, price"),
+    supabase!.from("merchants").select("id, name"),
+    supabase!.from("riders").select("id, name"),
+  ]);
 
   return {
     data: data as Order[] | null,
     fetchError,
     landmarks: landmarksData || [],
+    merchants: merchantsData || [],
+    riders: ridersData || [],
   };
 };
 
@@ -72,6 +78,8 @@ export const prepareExportData = (
   fomUsers: any[] = [],
   ccUsers: any[] = [],
   landmarks: any[] = [],
+  merchants: any[] = [],
+  riders: any[] = [],
 ) => {
   const headers = [
     "Order ID",
@@ -108,31 +116,33 @@ export const prepareExportData = (
   const rows = orders.map((order) => {
     const fomUser = fomUsers.find((u) => u.id === (order as any).fom_assigned);
     const ccUser = ccUsers.find((u) => u.id === order.extracted_by);
+    const merchantRecord = merchants.find((m) => m.id === order.merchant || m.name === order.merchant);
+    const riderRecord = riders.find((r) => r.id === (order as any).rider || r.name === (order as any).rider);
     const riderPrice = Number((order as any).payment_to_rider || 0);
     const total = Number(order.total_amount || 0);
     const landmarkRecord = landmarks.find(
-      (l) => l.name === (order as any).landmark,
+      (l) => l.id === (order as any).landmark || l.name === (order as any).landmark,
     );
     const landmarkPrice = Number(landmarkRecord?.price || 0);
 
     return [
-      `${order.id.split("-")[0]}`,
+      `${order.id!.split("-")[0]}`,
       formatDateDisplay(new Date(order.created_at)),
       order.customer_name || "",
       Array.isArray(order.phone_numbers) ? order.phone_numbers.join(", ") : "",
       order.delivery_address || "",
       order.items?.map((i) => `${i.quantity}x ${i.name}`).join("; ") || "",
       total.toFixed(2),
-      order.merchant || "",
+      merchantRecord?.name || order.merchant || "",
       (order as any).inventory_status || "",
       order.wh_delivery_status || "",
       fomUser?.display_name || "",
       formatOptionalDate(order.fom_assigned_at),
-      (order as any).rider_name || "",
+      riderRecord?.name || (order as any).rider_name || (order as any).rider || "",
       riderPrice.toFixed(2),
       formatOptionalDate(order.rider_assigned_at),
       order.fom_delivery_status || "",
-      (order as any).landmark || "",
+      landmarkRecord?.name || (order as any).landmark || "",
       landmarkPrice.toFixed(2),
       (order as any).payment_method || "",
       (order as any).bank || "",
@@ -142,7 +152,7 @@ export const prepareExportData = (
       formatOptionalDate(order.payment_verified_at),
       order.payment_to_merchant || "",
       (order as any).cc_comment || "",
-      (order as any).warehouse_comment || "",
+      (order as any).wh_comment || "",
       (order as any).fom_comment || "",
       ccUser?.display_name || "",
     ];
@@ -156,12 +166,16 @@ export const buildCsv = (
   fomUsers: any[] = [],
   ccUsers: any[] = [],
   landmarks: any[] = [],
+  merchants: any[] = [],
+  riders: any[] = [],
 ) => {
   const { headers, rows } = prepareExportData(
     orders,
     fomUsers,
     ccUsers,
     landmarks,
+    merchants,
+    riders,
   );
   const escapeValue = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
@@ -177,30 +191,32 @@ export const handleExport = async (
   startDate?: Date,
   endDate?: Date,
 ) => {
-  const { data: orders, landmarks } = await getOrders(startDate, endDate);
+  const { data: orders, landmarks, merchants, riders } = await getOrders(startDate, endDate);
   if (type === "xlsx") {
     const { headers, rows } = prepareExportData(
       orders!,
       fomUsers,
       ccUsers,
       landmarks,
+      merchants,
+      riders,
     );
     const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Orders");
     XLSX.writeFile(
       workbook,
-      `rachamhub-orders-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      `specify-orders-${new Date().toISOString().slice(0, 10)}.xlsx`,
     );
     return;
   }
 
-  const csv = buildCsv(orders!, fomUsers, ccUsers, landmarks);
+  const csv = buildCsv(orders!, fomUsers, ccUsers, landmarks, merchants, riders);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `rachamhub-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `specify-orders-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -221,7 +237,7 @@ export const handleExport = async (
 //   pdf.setProperties({ title: `Order Ticket - ${ticketId}` });
 //   pdf.setFont("helvetica", "bold");
 //   pdf.setFontSize(15);
-//   pdf.text("RACHAMHUB LIMITED TICKET", pageWidth / 2, cursorY, {
+//   pdf.text("SPECIFY TICKET", pageWidth / 2, cursorY, {
 //     align: "center",
 //   });
 //   cursorY += 8;
@@ -274,7 +290,7 @@ export const handleExport = async (
 //   cursorY += 9;
 //   addField("Comment", order.cc_comment || "-");
 
-//   pdf.save(`rachamhub-order-ticket-${ticketId}.pdf`);
+//   pdf.save(`specify-order-ticket-${ticketId}.pdf`);
 // };
 
 export const printTicket = (order: Order) => {
@@ -296,7 +312,7 @@ export const printTicket = (order: Order) => {
   printWindow.document.write(`
     <html>
       <head>
-        <title>Order Ticket - ${order.id.split("-")[0]}</title>
+        <title>Order Ticket - ${order.id!.split("-")[0]}</title>
         <style>
           body { font-family: Arial, Helvetica, sans-serif; padding: 20px; line-height: 1.5; color: #111; font-weight: 700; }
           .ticket { border: 3px solid #000; padding: 20px; max-width: 500px; margin: auto; }
@@ -313,13 +329,13 @@ export const printTicket = (order: Order) => {
       </head>
       <body>
         <div class="ticket">
-          <h1>RACHAMHUB LIMITED TICKET</h1>
+          <h1>SPECIFY TICKET</h1>
           <h2 class="call">* Call before going *</h2>
           <div class="field"><span class="label">Customer:</span> ${order.customer_name}</div>
           <div class="field"><span class="label">Phone:</span> ${order.phone_numbers?.join(", ") || "-"}</div>
           <div class="field"><span class="label">Address:</span> ${order.delivery_address}</div>
-          <div class="field"><span class="label">Order ID:</span> #${order.id.split("-")[0].toUpperCase()}</div>
-          <div class="field"><span class="label">Merchant:</span> #${order.merchant}</div>
+          <div class="field"><span class="label">Order ID:</span> #${order.id!.split("-")[0].toUpperCase()}</div>
+          <div class="field"><span class="label">Merchant:</span> ${order.merchant || "-"}</div>
           
           <table>
             <thead>

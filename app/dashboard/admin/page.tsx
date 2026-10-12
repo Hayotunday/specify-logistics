@@ -18,8 +18,6 @@ import {
 import { useGlobalStats } from "@/hooks/use-global-stats";
 import { formatCurrency } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
-
 export default function AdminDashboard() {
   const { user } = useAuth();
   const { stats, refreshStats } = useGlobalStats();

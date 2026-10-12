@@ -5,7 +5,7 @@ import { useSupabaseRealtime } from "@/hooks/use-supabase-realtime";
 import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Check, Edit2, Loader2, X } from "lucide-react";
-import { Order, type InventoryStatus } from "@/lib/types";
+import { MerchantRow, Order, type InventoryStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn, handleExport, printTicket } from "@/lib/utils";
 import { ExportButton } from "@/components/export-button";
@@ -49,6 +49,9 @@ export default function OutOfStockPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMerchant, setFilterMerchant] = useState<string | null>(null);
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
+  const [merchants, setMerchants] = useState<
+    Pick<MerchantRow, "id" | "name" | "is_active">[]
+  >([]);
   // Pause realtime while the user is editing a row, searching or filtering
   const [realtimePaused, setRealtimePaused] = useState(false);
   const [page, setPage] = useState(0);
@@ -59,7 +62,7 @@ export default function OutOfStockPage() {
   const [endDate, setEndDate] = useState<string>("");
 
   const startEditing = useCallback((order: Order) => {
-    setEditingId(order.id);
+    setEditingId(order.id!);
     setEditForm({ ...order });
   }, []);
 
@@ -72,13 +75,23 @@ export default function OutOfStockPage() {
     [],
   );
 
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => {
+      if (m.id && m.name) {
+        map.set(m.id, m.name);
+      }
+    });
+    return map;
+  }, [merchants]);
+
   const columns = useMemo<DataTableColumn[]>(
     () => [
       {
         key: "id",
         label: "Order ID",
-        render: (row) => `#${String(row.id || "").split("-")[0]}`,
-        getSearchableText: (row) => String(row.id || "").split("-")[0],
+        render: (row) => `#${String(row.id || "")}`,
+        getSearchableText: (row) => String(row.id || ""),
       },
       {
         key: "created_at",
@@ -122,8 +135,19 @@ export default function OutOfStockPage() {
       {
         key: "merchant",
         label: "Merchant",
-        render: (row) => (row.merchant as any) || "—",
-        getSearchableText: (row) => (row.merchant as any) || "",
+        render: (row) => {
+          const name =
+            (row.merchant ? merchantMap.get(String(row.merchant)) : null) ||
+            (row.merchant as any) ||
+            "—";
+          return name;
+        },
+        getSearchableText: (row) => {
+          const name =
+            (row.merchant ? merchantMap.get(String(row.merchant)) : null) ||
+            (row.merchant as any);
+          return name ? String(name) : "";
+        },
       },
       {
         key: "inventory_status",
@@ -137,9 +161,9 @@ export default function OutOfStockPage() {
                 setEditForm((prev) =>
                   prev
                     ? {
-                        ...prev,
-                        inventory_status: e.target.value as InventoryStatus,
-                      }
+                      ...prev,
+                      inventory_status: e.target.value as InventoryStatus,
+                    }
                     : prev,
                 )
               }
@@ -185,7 +209,7 @@ export default function OutOfStockPage() {
             ?.display_name || "",
       },
       {
-        key: "warehouse_comment",
+        key: "wh_comment",
         label: "Warehouse Comment",
         longText: true,
         render: (row) =>
@@ -196,18 +220,18 @@ export default function OutOfStockPage() {
               onClick={() =>
                 openCommentModal(
                   String(row.id),
-                  (editForm as any)?.warehouse_comment || "",
+                  (editForm as any)?.wh_comment || "",
                 )
               }
-              value={(editForm as any)?.warehouse_comment || "—"}
+              value={(editForm as any)?.wh_comment || "—"}
             />
           ) : (
-            (row as any).warehouse_comment || "—"
+            (row as any).wh_comment || "—"
           ),
-        getSearchableText: (row) => (row as any).warehouse_comment || "",
+        getSearchableText: (row) => (row as any).wh_comment || "",
       },
     ],
-    [editingId, editForm, fomUsers, openCommentModal],
+    [editingId, editForm, fomUsers, openCommentModal, merchantMap],
   );
 
   const isInitialLoad = useRef(true);
@@ -280,7 +304,7 @@ export default function OutOfStockPage() {
         let ordersQuery = supabase!
           .from("orders")
           .select(
-            "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, fom_assigned, warehouse_comment, cc_comment, status, prints",
+            "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, fom_assigned, wh_comment, cc_comment, status, prints",
             { count: "exact" },
           );
 
@@ -308,8 +332,7 @@ export default function OutOfStockPage() {
           })(),
           supabase!
             .from("merchants")
-            .select("name")
-            .eq("is_active", true)
+            .select("id, name, is_active")
             .order("name"),
           supabase!.from("users").select("id, display_name").eq("role", "fom"),
           supabase!
@@ -320,8 +343,15 @@ export default function OutOfStockPage() {
 
         if (fetchError) throw fetchError;
 
-        if (merchantsData)
-          setMerchantOptions(merchantsData.map((m: any) => m.name));
+        if (merchantsData) {
+          setMerchants(merchantsData);
+          setMerchantOptions(
+            merchantsData
+              .filter((m: any) => m.is_active !== false)
+              .map((m: any) => m.name || "")
+              .filter(Boolean),
+          );
+        }
         if (fomUserData) setFomUsers(fomUserData);
         if (ccUserData) setCcUsers(ccUserData);
         setOrders((ordersData ?? []) as Order[]);
@@ -344,7 +374,7 @@ export default function OutOfStockPage() {
       editForm.id === activeCommentOrderId
     ) {
       setEditForm((prev) =>
-        prev ? { ...prev, warehouse_comment: tempComment } : null,
+        prev ? { ...prev, wh_comment: tempComment } : null,
       );
     }
     setCommentModalOpen(false);
@@ -376,7 +406,7 @@ export default function OutOfStockPage() {
         .update({
           status: "warehouse",
           inventory_status: newStatus.toLowerCase(),
-          warehouse_comment: editForm.warehouse_comment,
+          wh_comment: editForm.wh_comment,
           fom_assigned: validFomId,
           fom_assigned_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -388,13 +418,20 @@ export default function OutOfStockPage() {
       const updatedOrder = { ...editForm };
       setEditingId(null);
       setEditForm(null);
-      printTicket(updatedOrder as Order);
+      printTicket({
+        ...updatedOrder,
+        merchant:
+          (updatedOrder.merchant
+            ? merchantMap.get(String(updatedOrder.merchant))
+            : null) ||
+          updatedOrder.merchant,
+      } as Order);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update order");
     } finally {
       setIsSaving(false);
     }
-  }, [editForm, fomUsers]);
+  }, [editForm, fomUsers, merchantMap]);
 
   useEffect(() => {
     fetchOrders();
@@ -415,15 +452,19 @@ export default function OutOfStockPage() {
     // Merchant filtering is done server-side
     return actionableOrders.filter((order) => {
       if (!term) return true;
+      const merchantName =
+        (order.merchant ? merchantMap.get(String(order.merchant)) : null) ||
+        order.merchant ||
+        "";
       return (
         (order.customer_name || "").toLowerCase().includes(term) ||
         (order.delivery_address || "").toLowerCase().includes(term) ||
-        (order.merchant || "").toLowerCase().includes(term) ||
+        merchantName.toLowerCase().includes(term) ||
         (order.id || "").toLowerCase().includes(term) ||
         (order.phone_numbers || []).join(" ").toLowerCase().includes(term)
       );
     });
-  }, [actionableOrders, searchTerm]);
+  }, [actionableOrders, searchTerm, merchantMap]);
 
   const renderRowActions = useCallback(
     (row: any) => {
@@ -560,7 +601,7 @@ export default function OutOfStockPage() {
               let q = supabase!
                 .from("orders")
                 .select(
-                  "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, fom_assigned, warehouse_comment, cc_comment, status, prints",
+                  "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, fom_assigned, wh_comment, cc_comment, status, prints",
                 )
                 .eq("inventory_status", "out-of-stock")
                 .neq("status", "customer_service")

@@ -179,7 +179,7 @@ export interface UserRow {
 type TableDefinition<Row, RequiredInsertKeys extends keyof Row = never> = {
   Row: Row;
   Insert: Pick<Row, RequiredInsertKeys> &
-    Partial<Omit<Row, RequiredInsertKeys>>;
+  Partial<Omit<Row, RequiredInsertKeys>>;
   Update: Partial<Row>;
   Relationships: [];
 };
@@ -240,7 +240,7 @@ export interface OrderItem {
 
 // Application order view; OrderRow above preserves the exact database nullability.
 export interface Order {
-  id: string;
+  id?: string;
   customer_name: string;
   delivery_address?: string | null;
   phone_numbers?: string[] | null;
@@ -253,7 +253,6 @@ export interface Order {
   wh_delivery_status?: DeliveryStatus | null;
   fom_delivery_status?: DeliveryStatus | null;
   wh_comment?: string | null;
-  warehouse_comment?: string | null;
   fom_assigned?: string | null;
   fom_assigned_at?: string | null;
   fom_comment?: string | null;

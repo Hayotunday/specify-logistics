@@ -72,7 +72,7 @@ export async function fetchRiderPayments(
   const { startDate, endDate, filterMerchant, page = 0, pageSize = 100 } = options;
 
   let ordersQuery = supabase.from("orders").select(
-    "id, created_at, customer_name, delivery_address, items, total_amount, rider_name, payment_to_rider, rider_assigned_at, fom_delivery_status, status, merchant",
+    "id, created_at, customer_name, delivery_address, items, total_amount, rider, payment_to_rider, rider_assigned_at, fom_delivery_status, status, merchant",
     { count: "exact" }
   );
 

@@ -37,7 +37,7 @@ Six specialized dashboard views tailored to the workflow of different teams:
 ## 📁 Project Structure
 
 ```text
-rachamhub/
+specify/
 ├── app/
 │   ├── api/                     # Backend API Routes (Gemini, Admin, etc.)
 │   ├── login/                   # User Login pages

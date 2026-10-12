@@ -16,8 +16,6 @@ import { supabase } from "@/lib/supabase";
 import { Order } from "@/lib/types";
 import Link from "next/link";
 
-export const dynamic = "force-dynamic";
-
 export default function AccountingDashboard() {
   const { user } = useAuth();
   

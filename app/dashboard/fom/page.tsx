@@ -37,8 +37,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
-export const dynamic = "force-dynamic";
-
 const PAYMENT_METHODS = ["Cash", "Transfer", "PBD"];
 const DELIVERY_STATUSES = [
   "pending",
@@ -51,8 +49,9 @@ const DELIVERY_STATUSES = [
 
 export default function FOMDashboard() {
   const { user } = useAuth();
-  const [riders, setRiders] = useState<string[]>([]);
+  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [landmarks, setLandmarks] = useState<any[]>([]);
+  const [merchants, setMerchants] = useState<{ id: string; name: string }[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +87,7 @@ export default function FOMDashboard() {
           const matchesMerchant =
             !filterMerchant || order.merchant === filterMerchant;
           const matchesQueue =
-            !order.rider_name &&
+            !order.rider &&
             order.inventory_status !== "out-of-stock" &&
             (!order.fom_delivery_status ||
               order.fom_delivery_status === "pending");
@@ -164,8 +163,9 @@ export default function FOMDashboard() {
 
       setOrders(fomResult.data);
       setTotalCount(fomResult.count ?? 0);
-      setRiders(riderData.map((r) => r.name || "").filter(Boolean));
-      setLandmarks(landmarkData);
+      setRiders((riderData ?? []) as { id: string; name: string }[]);
+      setLandmarks(landmarkData ?? []);
+      setMerchants((merchantData ?? []) as { id: string; name: string }[]);
       setMerchantOptions(merchantData.map((m) => m.name || "").filter(Boolean));
       setLoading(false);
     },
@@ -216,7 +216,7 @@ export default function FOMDashboard() {
 
   const handleFomSubmit = useCallback(
     async (order: Order) => {
-      const inputs = rowInputs[order.id] || {};
+      const inputs = rowInputs[order.id!] || {};
 
       const isReturnedOrCanceled =
         inputs.delivery_status === "returned" ||
@@ -224,7 +224,7 @@ export default function FOMDashboard() {
 
       if (
         !isReturnedOrCanceled &&
-        (!inputs.rider_name || !inputs.payment_to_rider || !inputs.landmark)
+        (!inputs.rider || !inputs.payment_to_rider || !inputs.landmark)
       ) {
         toast.info("Required fields missing", {
           description: "Rider name, rider Price, and landmark are required.",
@@ -232,13 +232,13 @@ export default function FOMDashboard() {
         return;
       }
 
-      setIsSubmitting(order.id);
+      setIsSubmitting(order.id!);
       const riderPrice = Number(inputs.payment_to_rider) || 0;
       const isFailed = inputs.delivery_status?.toLowerCase() === "failed";
       const finalRiderPrice = isFailed ? riderPrice / 2 : riderPrice;
 
       const selectedLandmark = landmarks.find(
-        (l) => l.name === inputs.landmark,
+        (l) => l.id === inputs.landmark || l.name === inputs.landmark,
       );
       const landmarkPrice = selectedLandmark
         ? Number(selectedLandmark.price)
@@ -246,9 +246,9 @@ export default function FOMDashboard() {
       const paymentByMerchant = -landmarkPrice;
 
       try {
-        await updateFomOrder(order.id, {
+        await updateFomOrder(order.id!, {
           status: "fom",
-          rider: inputs.rider_name || null,
+          rider: inputs.rider || null,
           payment_to_rider: finalRiderPrice,
           landmark: inputs.landmark || null,
           payment_to_merchant: paymentByMerchant,
@@ -272,13 +272,31 @@ export default function FOMDashboard() {
     [rowInputs, fetchData],
   );
 
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => { if (m.id && m.name) map.set(m.id, m.name); });
+    return map;
+  }, [merchants]);
+
+  const riderMap = useMemo(() => {
+    const map = new Map<string, string>();
+    riders.forEach((r) => { if (r.id && r.name) map.set(r.id, r.name); });
+    return map;
+  }, [riders]);
+
+  const landmarkMap = useMemo(() => {
+    const map = new Map<string, string>();
+    landmarks.forEach((l) => { if (l.id && l.name) map.set(l.id, l.name); });
+    return map;
+  }, [landmarks]);
+
   const columns = useMemo<DataTableColumn[]>(
     () => [
       {
         key: "id",
         label: "Order ID",
-        render: (row) => `#${String(row.id).split("-")[0]}`,
-        getSearchableText: (row) => String(row.id).split("-")[0],
+        render: (row) => `#${String(row.id)}`,
+        getSearchableText: (row) => String(row.id),
       },
       {
         key: "fom_assigned_at",
@@ -318,17 +336,22 @@ export default function FOMDashboard() {
       },
       {
         key: "items",
-        label: "Products",
+        label: "Merchant / Products",
         longText: true,
         render: (row) => (
-          <div className="text-xs truncate">
-            {((row.items as any[]) || [])
-              .map((i) => `${i.quantity}x ${i.name}`)
-              .join(", ")}
+          <div className="py-1 space-y-0.5">
+            <div className="text-xs font-semibold text-foreground">
+              {merchantMap.get(String((row as any).merchant ?? "")) || (row as any).merchant || "—"}
+            </div>
+            <div className="text-[11px] text-muted-foreground truncate">
+              {((row.items as any[]) || [])
+                .map((i) => `${i.quantity}x ${i.name}`)
+                .join(", ") || "—"}
+            </div>
           </div>
         ),
         getSearchableText: (row) =>
-          ((row.items as any[]) || []).map((i) => i.name).join(", "),
+          `${merchantMap.get(String((row as any).merchant ?? "")) || (row as any).merchant || ""} ${((row.items as any[]) || []).map((i) => i.name).join(", ")}`,
       },
       {
         key: "amount",
@@ -336,7 +359,7 @@ export default function FOMDashboard() {
         render: (row) => {
           const inputs = rowInputs[String(row.id)] || {};
           const selectedLandmark = landmarks.find(
-            (l) => l.name === inputs.landmark,
+            (l) => l.id === inputs.landmark || l.name === inputs.landmark,
           );
           const landmarkPrice = selectedLandmark
             ? Number(selectedLandmark.price)
@@ -357,7 +380,7 @@ export default function FOMDashboard() {
         getSearchableText: (row) => {
           const inputs = rowInputs[String(row.id)] || {};
           const selectedLandmark = landmarks.find(
-            (l) => l.name === inputs.landmark,
+            (l) => l.id === inputs.landmark || l.name === inputs.landmark,
           );
           const landmarkPrice = selectedLandmark
             ? Number(selectedLandmark.price)
@@ -368,25 +391,28 @@ export default function FOMDashboard() {
         },
       },
       {
-        key: "rider_name",
+        key: "rider",
         label: "Rider Name",
         render: (row) => (
           <select
             className="h-7 w-full rounded-md border border-input bg-background px-2 text-[10px]"
-            value={rowInputs[String(row.id)]?.rider_name || ""}
+            value={rowInputs[String(row.id)]?.rider || ""}
             onChange={(e) =>
-              updateRowInput(String(row.id), "rider_name", e.target.value)
+              updateRowInput(String(row.id), "rider", e.target.value)
             }
           >
             <option value="">Select Rider</option>
             {riders.map((r) => (
-              <option key={r} value={r}>
-                {r}
+              <option key={r.id} value={r.id}>
+                {r.name}
               </option>
             ))}
           </select>
         ),
-        getSearchableText: (row) => rowInputs[String(row.id)]?.rider_name || "",
+        getSearchableText: (row) =>
+          riderMap.get(String(rowInputs[String(row.id)]?.rider ?? "")) ||
+          rowInputs[String(row.id)]?.rider ||
+          "",
       },
       {
         key: "payment_to_rider",
@@ -418,13 +444,16 @@ export default function FOMDashboard() {
           >
             <option value="">Select Landmark</option>
             {landmarks.map((l) => (
-              <option key={l.id} value={l.name}>
+              <option key={l.id} value={l.id}>
                 {l.name}
               </option>
             ))}
           </select>
         ),
-        getSearchableText: (row) => rowInputs[String(row.id)]?.landmark || "",
+        getSearchableText: (row) =>
+          landmarkMap.get(String(rowInputs[String(row.id)]?.landmark ?? "")) ||
+          rowInputs[String(row.id)]?.landmark ||
+          "",
       },
       {
         key: "payment_method",
@@ -491,7 +520,7 @@ export default function FOMDashboard() {
           rowInputs[String(row.id)]?.fom_comment || "",
       },
     ],
-    [rowInputs, riders, landmarks, openCommentModal, updateRowInput],
+    [rowInputs, riders, landmarks, merchantMap, riderMap, landmarkMap, openCommentModal, updateRowInput],
   );
 
   // All queue + merchant filtering is now done server-side in the Supabase query,
@@ -508,7 +537,7 @@ export default function FOMDashboard() {
         inputs.delivery_status === "canceled";
 
       const isComplete = Boolean(
-        inputs.rider_name && inputs.payment_to_rider && inputs.landmark,
+        inputs.rider && inputs.payment_to_rider && inputs.landmark,
       );
 
       const canSubmit = isComplete || isReturnedOrCanceled;

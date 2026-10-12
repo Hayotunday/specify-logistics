@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-context";
-import { ExtractedOrder, GeminiResponse } from "@/lib/types";
+import { ExtractedOrder, GeminiResponse, Order } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { AlertCircle, CheckCircle2, Loader2, Zap } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -133,21 +133,30 @@ export default function OrderExtractionForm() {
     try {
       if (!supabase) throw new Error("Supabase client is not initialized.");
 
-      const orderData = {
+      const merchantResponse = await supabase
+        .from("merchants")
+        .select("id")
+        .eq("is_active", true)
+        .eq("name", orderToSave.merchant);
+
+      const merchantId = merchantResponse.data?.[0]?.id;
+
+      const orderData: Order = {
         customer_name: orderToSave.customerName,
-        delivery_address: orderToSave.deliveryAddress,
-        phone_numbers: orderToSave.phoneNumbers,
-        merchant: orderToSave.merchant,
-        cc_comment: orderToSave.comment,
+        delivery_address: orderToSave.deliveryAddress!,
+        phone_numbers: orderToSave.phoneNumbers!,
+        merchant: merchantId,
+        cc_comment: orderToSave.comment!,
         items: orderToSave.items,
         total_amount: orderToSave.totalAmount,
         wh_delivery_status: "pending",
         fom_delivery_status: "pending",
         inventory_status: "unpacked",
+        status: "customer_service",
         extracted_by: user.uid,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      } as any;
+      };
 
       const { error } = await supabase.from("orders").insert([orderData]);
       if (error) throw error;

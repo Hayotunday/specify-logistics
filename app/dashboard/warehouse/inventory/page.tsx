@@ -5,7 +5,7 @@ import { useSupabaseRealtime } from "@/hooks/use-supabase-realtime";
 import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Check, Download, Edit2, Loader2, X, Printer } from "lucide-react";
-import { Order, type InventoryStatus } from "@/lib/types";
+import { MerchantRow, Order, type InventoryStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn, handleExport, printTicket } from "@/lib/utils";
 import { ExportButton } from "@/components/export-button";
@@ -50,6 +50,9 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMerchant, setFilterMerchant] = useState<string | null>(null);
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
+  const [merchants, setMerchants] = useState<
+    Pick<MerchantRow, "id" | "name" | "is_active">[]
+  >([]);
   const [warehouseKeyModalOpen, setWarehouseKeyModalOpen] = useState(false);
   const [warehouseAccessKey, setWarehouseAccessKey] = useState("");
   const { user } = useAuth();
@@ -66,7 +69,7 @@ export default function InventoryPage() {
   const [isPrinting, setIsPrinting] = useState(false);
 
   const startEditing = useCallback((order: Order) => {
-    setEditingId(order.id);
+    setEditingId(order.id!);
     setEditForm({ ...order });
   }, []);
 
@@ -79,13 +82,23 @@ export default function InventoryPage() {
     [],
   );
 
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => {
+      if (m.id && m.name) {
+        map.set(m.id, m.name);
+      }
+    });
+    return map;
+  }, [merchants]);
+
   const columns = useMemo<DataTableColumn[]>(
     () => [
       {
         key: "id",
         label: "Order ID",
-        render: (row) => `#${String(row.id || "").split("-")[0]}`,
-        getSearchableText: (row) => String(row.id || "").split("-")[0],
+        render: (row) => `#${String(row.id || "")}`,
+        getSearchableText: (row) => String(row.id || ""),
       },
       {
         key: "created_at",
@@ -137,12 +150,23 @@ export default function InventoryPage() {
       {
         key: "merchant",
         label: "Merchant",
-        render: (row) => (row.merchant as any) || "—",
-        getSearchableText: (row) => (row.merchant as any) || "",
+        render: (row) => {
+          const name =
+            (row.merchant ? merchantMap.get(String(row.merchant)) : null) ||
+            (row.merchant as any) ||
+            "—";
+          return name;
+        },
+        getSearchableText: (row) => {
+          const name =
+            (row.merchant ? merchantMap.get(String(row.merchant)) : null) ||
+            (row.merchant as any);
+          return name ? String(name) : "";
+        },
       },
       {
         key: "inventory_status",
-        label: "Warehouse Status",
+        label: "Inventory Status",
         render: (row) => {
           const isEditing = editingId === String(row.id);
           const inventoryDelivered =
@@ -163,9 +187,9 @@ export default function InventoryPage() {
                 setEditForm((prev) =>
                   prev
                     ? {
-                        ...prev,
-                        inventory_status: event.target.value as InventoryStatus,
-                      }
+                      ...prev,
+                      inventory_status: event.target.value as InventoryStatus,
+                    }
                     : prev,
                 )
               }
@@ -191,7 +215,7 @@ export default function InventoryPage() {
               fomUsers.find((user) => user.id === (row as any).fom_assigned)
                 ?.display_name || "—"
             );
-          return !(row as any).rider_name ? (
+          return !(row as any).rider ? (
             <select
               className="h-8 w-full rounded-md border border-input bg-background px-2 text-[11px]"
               value={(editForm as any)?.fom_assigned || ""}
@@ -233,7 +257,7 @@ export default function InventoryPage() {
       },
       {
         key: "wh_delivery_status",
-        label: "Inventory Del. Status",
+        label: "Warehouse Del. Status",
         render: (row) =>
           editingId === String(row.id) ? (
             <select
@@ -269,7 +293,7 @@ export default function InventoryPage() {
           (row.wh_delivery_status as any) || "pending",
       },
       {
-        key: "warehouse_comment",
+        key: "wh_comment",
         label: "Warehouse Comment",
         longText: true,
         render: (row) =>
@@ -280,15 +304,15 @@ export default function InventoryPage() {
               onClick={() =>
                 openCommentModal(
                   String(row.id),
-                  (editForm as any)?.warehouse_comment || "",
+                  (editForm as any)?.wh_comment || "",
                 )
               }
-              value={(editForm as any)?.warehouse_comment || "—"}
+              value={(editForm as any)?.wh_comment || "—"}
             />
           ) : (
-            (row as any).warehouse_comment || "—"
+            (row as any).wh_comment || "—"
           ),
-        getSearchableText: (row) => (row as any).warehouse_comment || "",
+        getSearchableText: (row) => (row as any).wh_comment || "",
       },
       {
         key: "cc_comment",
@@ -313,7 +337,7 @@ export default function InventoryPage() {
         getSearchableText: (row) => (row as any).cc_comment || "",
       },
     ],
-    [editingId, editForm, fomUsers, openCommentModal],
+    [editingId, editForm, fomUsers, openCommentModal, merchantMap],
   );
 
   const isInitialLoad = useRef(true);
@@ -388,7 +412,7 @@ export default function InventoryPage() {
         let ordersQuery = supabase!
           .from("orders")
           .select(
-            "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, fom_delivery_status, wh_delivery_status, inventory_status, fom_assigned, warehouse_comment, cc_comment, status, rider_name, prints",
+            "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, fom_delivery_status, wh_delivery_status, inventory_status, fom_assigned, wh_comment, cc_comment, status, rider, prints",
             { count: "exact" },
           );
 
@@ -417,8 +441,7 @@ export default function InventoryPage() {
           })(),
           supabase!
             .from("merchants")
-            .select("name")
-            .eq("is_active", true)
+            .select("id, name, is_active")
             .order("name"),
           supabase!.from("users").select("id, display_name").eq("role", "fom"),
           supabase!
@@ -429,8 +452,15 @@ export default function InventoryPage() {
 
         if (fetchError) throw fetchError;
 
-        if (merchantsData)
-          setMerchantOptions(merchantsData.map((m: any) => m.name));
+        if (merchantsData) {
+          setMerchants(merchantsData);
+          setMerchantOptions(
+            merchantsData
+              .filter((m: any) => m.is_active !== false)
+              .map((m: any) => m.name || "")
+              .filter(Boolean),
+          );
+        }
         if (fomUserData) setFomUsers(fomUserData);
         if (ccUserData) setCcUsers(ccUserData);
         setOrders((ordersData ?? []) as Order[]);
@@ -452,9 +482,9 @@ export default function InventoryPage() {
       editForm &&
       editForm.id === activeCommentOrderId
     ) {
-      // Update the editForm's warehouse_comment with the tempComment
+      // Update the editForm's wh_comment with the tempComment
       setEditForm((prev) =>
-        prev ? { ...prev, warehouse_comment: tempComment } : null,
+        prev ? { ...prev, wh_comment: tempComment } : null,
       );
     }
     setCommentModalOpen(false);
@@ -502,7 +532,7 @@ export default function InventoryPage() {
           wh_delivery_status: editForm.wh_delivery_status?.toLowerCase(),
           inventory_status: (editForm as any).inventory_status?.toLowerCase(),
           fom_assigned: (editForm as any).fom_assigned,
-          warehouse_comment: (editForm as any).warehouse_comment,
+          wh_comment: (editForm as any).wh_comment,
           updated_at: new Date().toISOString(),
         })
         .eq("id", editForm.id);
@@ -541,7 +571,15 @@ export default function InventoryPage() {
 
       if (updateError) throw updateError;
 
-      printTicket({ ...orderToPrint, prints: newPrintsCount });
+      printTicket({
+        ...orderToPrint,
+        merchant:
+          (orderToPrint.merchant
+            ? merchantMap.get(String(orderToPrint.merchant))
+            : null) ||
+          orderToPrint.merchant,
+        prints: newPrintsCount,
+      });
       setPrintModalOpen(false);
       setOrderToPrint(null);
       setWarehouseAccessKey("");
@@ -579,15 +617,19 @@ export default function InventoryPage() {
     // Merchant filtering is done server-side
     return actionableOrders.filter((order) => {
       if (!term) return true;
+      const merchantName =
+        (order.merchant ? merchantMap.get(String(order.merchant)) : null) ||
+        order.merchant ||
+        "";
       return (
         (order.customer_name || "").toLowerCase().includes(term) ||
         (order.delivery_address || "").toLowerCase().includes(term) ||
-        (order.merchant || "").toLowerCase().includes(term) ||
+        merchantName.toLowerCase().includes(term) ||
         (order.id || "").toLowerCase().includes(term) ||
         (order.phone_numbers || []).join(" ").toLowerCase().includes(term)
       );
     });
-  }, [actionableOrders, searchTerm]);
+  }, [actionableOrders, searchTerm, merchantMap]);
 
   const renderRowActions = useCallback(
     (row: any) => {
@@ -741,7 +783,7 @@ export default function InventoryPage() {
               let q = supabase!
                 .from("orders")
                 .select(
-                  "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, fom_delivery_status, wh_delivery_status, inventory_status, fom_assigned, warehouse_comment, cc_comment, status, rider_name, prints",
+                  "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, fom_delivery_status, wh_delivery_status, inventory_status, fom_assigned, wh_comment, cc_comment, status, rider, prints",
                 )
                 .neq("inventory_status", "out-of-stock")
                 .neq("status", "customer_service")

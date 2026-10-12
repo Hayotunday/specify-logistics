@@ -69,7 +69,7 @@ export default function DashboardNav({ className }: DashboardNavProps) {
       customer_service: [
         {
           label: "Home",
-          href: `/dashboard/${user.role}/`,
+          href: `/dashboard/${user.role}`,
           icon: Home,
         },
         {
@@ -96,7 +96,7 @@ export default function DashboardNav({ className }: DashboardNavProps) {
       warehouse: [
         {
           label: "Warehouse",
-          href: `/dashboard/${user.role}/`,
+          href: `/dashboard/${user.role}`,
           icon: Warehouse,
         },
         {
@@ -123,7 +123,7 @@ export default function DashboardNav({ className }: DashboardNavProps) {
       fom: [
         {
           label: "Home",
-          href: `/dashboard/${user.role}/`,
+          href: `/dashboard/${user.role}`,
           icon: Home,
         },
         {
@@ -140,7 +140,7 @@ export default function DashboardNav({ className }: DashboardNavProps) {
       accounting: [
         {
           label: "Overview",
-          href: `/dashboard/${user.role}/`,
+          href: `/dashboard/${user.role}`,
           icon: Home,
         },
         {
@@ -162,7 +162,7 @@ export default function DashboardNav({ className }: DashboardNavProps) {
       admin: [
         {
           label: "Overview",
-          href: `/dashboard/${user.role}/`,
+          href: `/dashboard/${user.role}`,
           icon: Package,
         },
         {
@@ -220,7 +220,7 @@ export default function DashboardNav({ className }: DashboardNavProps) {
           </div>
           <div className="flex-1">
             <h2 className="font-extrabold text-sidebar-foreground tracking-tight text-base">SPECIFY</h2>
-            <p className="text-[10px] text-orange-400 font-semibold tracking-wider uppercase -mt-0.5">Logistics Limited</p>
+            <p className="text-[10px] text-orange-400 font-semibold tracking-wider uppercase -mt-0.5">Logistics</p>
           </div>
         </Link>
       </div>
@@ -254,7 +254,7 @@ export default function DashboardNav({ className }: DashboardNavProps) {
                   "w-full justify-start gap-3 text-sidebar-foreground rounded-md",
                   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   isActive &&
-                    "bg-sidebar-accent text-sidebar-accent-foreground font-semibold",
+                  "bg-sidebar-accent text-sidebar-accent-foreground font-semibold",
                 )}
               >
                 <Icon className="h-5 w-5" />

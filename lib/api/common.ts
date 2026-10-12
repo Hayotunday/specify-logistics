@@ -179,7 +179,7 @@ export async function fetchExportOrders(
   let query = supabase
     .from("orders")
     .select(
-      "id, created_at, customer_name, phone_numbers, delivery_address, items, total_amount, merchant, inventory_status, wh_delivery_status, fom_assigned, fom_assigned_at, rider_name, payment_to_rider, rider_assigned_at, fom_delivery_status, landmark, payment_method, bank, quantity_delivered, amount_paid, payment_confirmed, payment_verified_at, payment_to_merchant, cc_comment, warehouse_comment, fom_comment, extracted_by"
+      "id, created_at, customer_name, phone_numbers, delivery_address, items, total_amount, merchant, inventory_status, wh_delivery_status, fom_assigned, fom_assigned_at, rider, payment_to_rider, rider_assigned_at, fom_delivery_status, landmark, payment_method, bank, quantity_delivered, amount_paid, payment_confirmed, payment_verified_at, payment_to_merchant, cc_comment, wh_comment, fom_comment, extracted_by"
     );
 
   if (startDate) {
@@ -224,19 +224,47 @@ export async function fetchTrackedOrder(
     .eq("id", cleanQuery)
     .maybeSingle();
 
-  if (data) {
-    return data as unknown as Order;
-  }
+  let targetOrder = data;
 
   // If not found, try prefix match on id (e.g., first 8 chars of UUID)
-  const { data: prefixMatch } = await supabase
-    .from("orders")
-    .select("*")
-    .ilike("id", `${cleanQuery}%`)
-    .limit(1);
+  if (!targetOrder) {
+    const { data: prefixMatch } = await supabase
+      .from("orders")
+      .select("*")
+      .ilike("id", `${cleanQuery}%`)
+      .limit(1);
 
-  if (prefixMatch && prefixMatch.length > 0) {
-    return prefixMatch[0] as unknown as Order;
+    if (prefixMatch && prefixMatch.length > 0) {
+      targetOrder = prefixMatch[0];
+    }
+  }
+
+  if (targetOrder) {
+    if (targetOrder.merchant) {
+      const { data: m } = await supabase
+        .from("merchants")
+        .select("name")
+        .eq("id", targetOrder.merchant)
+        .maybeSingle();
+      if (m?.name) targetOrder.merchant = m.name;
+    }
+    if (targetOrder.landmark) {
+      const { data: l } = await supabase
+        .from("landmarks")
+        .select("name")
+        .eq("id", targetOrder.landmark)
+        .maybeSingle();
+      if (l?.name) targetOrder.landmark = l.name;
+    }
+    if (targetOrder.rider) {
+      const { data: r } = await supabase
+        .from("riders")
+        .select("name")
+        .eq("id", targetOrder.rider)
+        .maybeSingle();
+      if (r?.name) targetOrder.rider = r.name;
+    }
+    return targetOrder as unknown as Order;
   }
 
   return null;

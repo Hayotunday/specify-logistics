@@ -22,6 +22,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const VALID_ROLES: UserRole[] = [
+  "customer_service",
+  "warehouse",
+  "fom",
+  "accounting",
+  "admin",
+];
+
+export function sanitizeRole(rawRole: any): UserRole {
+  if (!rawRole) return "customer_service";
+  const str = String(rawRole).trim().toLowerCase();
+  if (str === "administrator") return "admin";
+  if (VALID_ROLES.includes(str as UserRole)) return str as UserRole;
+  return "customer_service";
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         uid: row.id,
         email: row.email || "",
         displayName: row.display_name || row.displayName || "User",
-        role: row.role || ("customer_service" as UserRole),
+        role: sanitizeRole(row.role),
         isActive: typeof row.is_active === "boolean" ? row.is_active : true,
         isDeleted: typeof row.is_deleted === "boolean" ? row.is_deleted : false,
         createdAt: row.created_at || new Date().toISOString(),
@@ -128,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         email: newData.email || "",
                         displayName:
                           newData.display_name || newData.displayName || "User",
-                        role: newData.role || ("customer_service" as UserRole),
+                        role: sanitizeRole(newData.role),
                         isActive:
                           typeof newData.is_active === "boolean"
                             ? newData.is_active

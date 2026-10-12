@@ -24,6 +24,7 @@ type BreakdownOrder = {
   payment_to_rider?: number | null;
   fom_delivery_status?: string | null;
   wh_delivery_status?: string | null;
+  rider?: string | null;
   rider_name?: string | null;
   landmark?: string | null;
   created_at: string;
@@ -33,6 +34,8 @@ type BreakdownOrder = {
 
 export default function MerchantBreakdownPage() {
   const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
+  const [landmarks, setLandmarks] = useState<any[]>([]);
   const [orders, setOrders] = useState<BreakdownOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -45,12 +48,22 @@ export default function MerchantBreakdownPage() {
   const fetchMerchants = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await supabase!
-        .from("merchants")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("name");
-      setMerchants((data ?? []) as Merchant[]);
+      const [
+        { data: merchantsData },
+        { data: ridersData },
+        { data: landmarksData },
+      ] = await Promise.all([
+        supabase!
+          .from("merchants")
+          .select("id, name")
+          .eq("is_active", true)
+          .order("name"),
+        supabase!.from("riders").select("id, name").order("name"),
+        supabase!.from("landmarks").select("id, name, price"),
+      ]);
+      setMerchants((merchantsData ?? []) as Merchant[]);
+      if (ridersData) setRiders(ridersData);
+      if (landmarksData) setLandmarks(landmarksData);
     } catch {
       toast.error("Failed to load merchants.");
     } finally {
@@ -75,15 +88,14 @@ export default function MerchantBreakdownPage() {
       const { data, error } = await supabase!
         .from("orders")
         .select(
-          "id, customer_name, merchant, items, amount_paid, total_amount, payment_to_merchant, payment_to_rider, fom_delivery_status, wh_delivery_status, rider_name, landmark, created_at, delivered_at",
+          "id, customer_name, merchant, items, amount_paid, total_amount, payment_to_merchant, payment_to_rider, fom_delivery_status, wh_delivery_status, rider, landmark, created_at, delivered_at, quantity_delivered",
         )
-        .eq("merchant", merchant.name)
+        .eq("merchant", merchant.id)
         .gte("delivered_at", start.toISOString())
         .lt("delivered_at", end.toISOString())
         .order("delivered_at", { ascending: false });
 
       if (error) throw error;
-      setOrders(data);
       setOrders((data ?? []) as BreakdownOrder[]);
     } catch {
       toast.error("Failed to load orders for the selected date.");
@@ -123,14 +135,15 @@ export default function MerchantBreakdownPage() {
       const { data: deliveredOrders } = await supabase!
         .from("orders")
         .select("items, quantity_delivered")
-        .eq("merchant", selectedMerchant.name)
+        .eq("merchant", selectedMerchant.id)
         .eq("fom_delivery_status", "delivered");
 
       const { data: landmarksData } = await supabase!
         .from("landmarks")
-        .select("name, price");
+        .select("id, name, price");
       const landmarksMap = new Map<string, number>();
       for (const l of landmarksData ?? []) {
+        if (l.id) landmarksMap.set(l.id, l.price || 0);
         if (l.name) landmarksMap.set(l.name.toLowerCase(), l.price || 0);
       }
 
@@ -199,10 +212,11 @@ export default function MerchantBreakdownPage() {
       // Each order
       for (const order of orders) {
         const isFailed = order.fom_delivery_status?.toLowerCase() === "failed";
-        const landmark = order.landmark || "—";
-        const landmarkPrice = landmarksMap.get(landmark.toLowerCase()) || 0;
+        const landmarkRecord = landmarks.find((l) => l.id === order.landmark || l.name?.toLowerCase() === order.landmark?.toLowerCase());
+        const landmarkName = landmarkRecord?.name || order.landmark || "—";
+        const landmarkPrice = landmarkRecord?.price ? Number(landmarkRecord.price) : (landmarksMap.get(order.landmark || "") || landmarksMap.get((order.landmark || "").toLowerCase()) || 0);
         const riderFee = Number(landmarkPrice);
-        const landmarkLine = `${landmark} – ₦${riderFee.toLocaleString()}`;
+        const landmarkLine = `${landmarkName} – ₦${riderFee.toLocaleString()}`;
         const amount = isFailed
           ? "" // failed: no amount
           : `₦${Number(order.total_amount || 0).toLocaleString()}`;
@@ -213,7 +227,7 @@ export default function MerchantBreakdownPage() {
 
         let docRemainingQty =
           order.quantity_delivered !== null &&
-          order.quantity_delivered !== undefined
+            order.quantity_delivered !== undefined
             ? Number(order.quantity_delivered)
             : null;
 
@@ -503,13 +517,12 @@ export default function MerchantBreakdownPage() {
                     return (
                       <tr
                         key={order.id}
-                        className={`border-t border-border ${
-                          isFailed
-                            ? "bg-red-50"
-                            : isDelivered
-                              ? "bg-emerald-50/30"
-                              : ""
-                        }`}
+                        className={`border-t border-border ${isFailed
+                          ? "bg-red-50"
+                          : isDelivered
+                            ? "bg-emerald-50/30"
+                            : ""
+                          }`}
                       >
                         <td className="p-3 font-medium">
                           {order.customer_name}
@@ -521,26 +534,27 @@ export default function MerchantBreakdownPage() {
                         </td>
                         <td className="p-3 text-center">
                           {order.quantity_delivered !== null &&
-                          order.quantity_delivered !== undefined
+                            order.quantity_delivered !== undefined
                             ? order.quantity_delivered
                             : (order.items ?? []).reduce(
-                                (s, i) => s + Number(i.quantity || 0),
-                                0,
-                              )}
+                              (s, i) => s + Number(i.quantity || 0),
+                              0,
+                            )}
                         </td>
                         <td className="p-3 text-xs">
-                          {order.rider_name || "—"}
+                          {riders.find((r) => r.id === order.rider)?.name || (order as any).rider_name || order.rider || "—"}
                         </td>
-                        <td className="p-3 text-xs">{order.landmark || "—"}</td>
+                        <td className="p-3 text-xs">
+                          {landmarks.find((l) => l.id === order.landmark)?.name || order.landmark || "—"}
+                        </td>
                         <td className="p-3">
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
-                              isDelivered
-                                ? "bg-emerald-100 text-emerald-700"
-                                : isFailed
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-amber-100 text-amber-700"
-                            }`}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${isDelivered
+                              ? "bg-emerald-100 text-emerald-700"
+                              : isFailed
+                                ? "bg-red-100 text-red-700"
+                                : "bg-amber-100 text-amber-700"
+                              }`}
                           >
                             {order.fom_delivery_status ||
                               order.wh_delivery_status ||

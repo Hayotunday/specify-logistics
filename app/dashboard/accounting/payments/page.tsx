@@ -28,6 +28,8 @@ export default function PaymentsPage() {
   const [foms, setFoms] = useState<any[]>([]);
   const [ccUsers, setCcUsers] = useState<any[]>([]);
   const [landmarks, setLandmarks] = useState<any[]>([]);
+  const [merchants, setMerchants] = useState<{ id: string; name: string }[]>([]);
+  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMerchant, setFilterMerchant] = useState<string | null>(null);
@@ -104,7 +106,7 @@ export default function PaymentsPage() {
         let ordersQuery = supabase!
           .from("orders")
           .select(
-            "id, payment_verified_at, delivered_at, wh_delivery_status, fom_delivery_status, customer_name, fom_assigned, amount_paid, total_amount, quantity_delivered, merchant, payment_to_merchant, landmark, rider_name, payment_to_rider, bank, payment_method, fom_comment, created_at, payment_confirmed",
+            "id, payment_verified_at, delivered_at, wh_delivery_status, fom_delivery_status, customer_name, fom_assigned, amount_paid, total_amount, quantity_delivered, merchant, payment_to_merchant, landmark, rider, payment_to_rider, bank, payment_method, fom_comment, created_at, payment_confirmed",
             { count: "exact" },
           );
 
@@ -120,6 +122,8 @@ export default function PaymentsPage() {
           { data: landmarksData },
           { data: fomUserData },
           { data: ccUserData },
+          { data: merchantsData },
+          { data: ridersData },
         ] = await Promise.all([
           (() => {
             let q = ordersQuery.eq("payment_confirmed", true);
@@ -134,6 +138,8 @@ export default function PaymentsPage() {
             .from("users")
             .select("id, display_name")
             .eq("role", "customer_service"),
+          supabase!.from("merchants").select("id, name").eq("is_active", true).order("name"),
+          supabase!.from("riders").select("id, name").eq("is_active", true).order("name"),
         ]);
 
         if (fetchError) {
@@ -145,6 +151,8 @@ export default function PaymentsPage() {
         setLandmarks((landmarksData ?? []) as any[]);
         setFoms((fomUserData ?? []) as any[]);
         setCcUsers((ccUserData ?? []) as any[]);
+        if (merchantsData) setMerchants(merchantsData as { id: string; name: string }[]);
+        if (ridersData) setRiders(ridersData as { id: string; name: string }[]);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Unable to load payments.",
@@ -160,12 +168,30 @@ export default function PaymentsPage() {
     fetchData();
   }, [fetchData]);
 
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => { if (m.id && m.name) map.set(m.id, m.name); });
+    return map;
+  }, [merchants]);
+
+  const riderMap = useMemo(() => {
+    const map = new Map<string, string>();
+    riders.forEach((r) => { if (r.id && r.name) map.set(r.id, r.name); });
+    return map;
+  }, [riders]);
+
+  const landmarkMap = useMemo(() => {
+    const map = new Map<string, string>();
+    landmarks.forEach((l) => { if (l.id && l.name) map.set(l.id, l.name); });
+    return map;
+  }, [landmarks]);
+
   const columns: DataTableColumn[] = [
     {
       key: "id",
       label: "Order ID",
-      render: (row) => `#${String(row.id).split("-")[0]}`,
-      getSearchableText: (row) => String(row.id).split("-")[0],
+      render: (row) => `#${String(row.id)}`,
+      getSearchableText: (row) => String(row.id),
     },
     {
       key: "payment_verified_at",
@@ -173,16 +199,16 @@ export default function PaymentsPage() {
       render: (row) =>
         (row.payment_verified_at as string)
           ? new Date(row.payment_verified_at as string).toLocaleString([], {
-              dateStyle: "short",
-              timeStyle: "short",
-            })
+            dateStyle: "short",
+            timeStyle: "short",
+          })
           : "—",
       getSearchableText: (row) =>
         (row.payment_verified_at as string)
           ? new Date(row.payment_verified_at as string).toLocaleString([], {
-              dateStyle: "short",
-              timeStyle: "short",
-            })
+            dateStyle: "short",
+            timeStyle: "short",
+          })
           : "—",
     },
     {
@@ -191,16 +217,16 @@ export default function PaymentsPage() {
       render: (row) =>
         (row as any).delivered_at
           ? new Date((row as any).delivered_at).toLocaleString([], {
-              dateStyle: "short",
-              timeStyle: "short",
-            })
+            dateStyle: "short",
+            timeStyle: "short",
+          })
           : "—",
       getSearchableText: (row) =>
         (row as any).delivered_at
           ? new Date((row as any).delivered_at).toLocaleString([], {
-              dateStyle: "short",
-              timeStyle: "short",
-            })
+            dateStyle: "short",
+            timeStyle: "short",
+          })
           : "",
     },
     {
@@ -220,7 +246,7 @@ export default function PaymentsPage() {
     },
     {
       key: "wh_delivery_status",
-      label: "Inventory Del. Status",
+      label: "Warehouse Del. Status",
       render: (row) => (
         <span
           className={cn(
@@ -272,8 +298,8 @@ export default function PaymentsPage() {
       key: "merchant",
       label: "Merchant",
       longText: true,
-      render: (row) => (row.merchant as any) || "—",
-      getSearchableText: (row) => (row.merchant as any) || "",
+      render: (row) => merchantMap.get(String((row as any).merchant ?? "")) || (row.merchant as any) || "—",
+      getSearchableText: (row) => merchantMap.get(String((row as any).merchant ?? "")) || (row.merchant as any) || "",
     },
     {
       key: "payment_to_merchant",
@@ -286,29 +312,28 @@ export default function PaymentsPage() {
     {
       key: "landmark",
       label: "Landmark",
-      render: (row) => (row.landmark as any) || "—",
-      getSearchableText: (row) => (row.landmark as any) || "",
+      render: (row) => landmarkMap.get(String((row as any).landmark ?? "")) || (row.landmark as any) || "—",
+      getSearchableText: (row) => landmarkMap.get(String((row as any).landmark ?? "")) || (row.landmark as any) || "",
     },
     {
       key: "landmark_price",
       label: "Landmark Price",
       render: (row) =>
-        `₦${
-          landmarks
-            .find((l) => l.name === (row as any).landmark)
-            ?.price?.toLocaleString() || "—"
+        `₦${landmarks
+          .find((l) => l.id === (row as any).landmark)
+          ?.price?.toLocaleString() || "—"
         }`,
       getSearchableText: (row) =>
         String(
-          landmarks.find((l) => l.name === (row as any).landmark)?.price || "",
+          landmarks.find((l) => l.id === (row as any).landmark)?.price || "",
         ),
     },
     {
       key: "rider_name",
       label: "Rider",
       longText: true,
-      render: (row) => (row.rider_name as any) || "—",
-      getSearchableText: (row) => (row.rider_name as any) || "",
+      render: (row) => riderMap.get(String((row as any).rider ?? "")) || (row as any).rider || "—",
+      getSearchableText: (row) => riderMap.get(String((row as any).rider ?? "")) || (row as any).rider || "",
     },
     {
       key: "payment_to_rider",
@@ -348,13 +373,18 @@ export default function PaymentsPage() {
     // Merchant filtering is done server-side
     return orders.filter((order) => {
       if (!term) return true;
+      const merchantName = merchantMap.get(String(order.merchant ?? "")) || order.merchant || "";
+      const riderName = riderMap.get(String((order as any).rider ?? "")) || "";
+      const landmarkName = landmarkMap.get(String((order as any).landmark ?? "")) || "";
       return (
         (order.customer_name || "").toLowerCase().includes(term) ||
         (order.id || "").toLowerCase().includes(term) ||
-        (order.merchant || "").toLowerCase().includes(term)
+        merchantName.toLowerCase().includes(term) ||
+        riderName.toLowerCase().includes(term) ||
+        landmarkName.toLowerCase().includes(term)
       );
     });
-  }, [orders, searchTerm]);
+  }, [orders, searchTerm, merchantMap, riderMap, landmarkMap]);
 
   return (
     <div className="space-y-6">
@@ -441,7 +471,7 @@ export default function PaymentsPage() {
               let q = supabase!
                 .from("orders")
                 .select(
-                  "id, payment_verified_at, delivered_at, customer_name, fom_assigned, amount_paid, total_amount, quantity_delivered, merchant, payment_to_merchant, landmark, rider_name, payment_to_rider, bank, payment_method, fom_comment, created_at, payment_confirmed",
+                  "id, payment_verified_at, delivered_at, customer_name, fom_assigned, amount_paid, total_amount, quantity_delivered, merchant, payment_to_merchant, landmark, rider, payment_to_rider, bank, payment_method, fom_comment, created_at, payment_confirmed",
                 )
                 .eq("payment_confirmed", true)
                 .order("updated_at", { ascending: false })

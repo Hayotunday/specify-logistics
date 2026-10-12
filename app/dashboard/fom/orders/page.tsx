@@ -40,6 +40,10 @@ const BANK_OPTIONS = ["UBA", "moniepoint"];
 export default function FOMOrdersPage() {
   const { user } = useAuth();
   const [foms, setFoms] = useState<any[]>([]);
+  const [riders, setRiders] = useState<{ id: string; name: string }[]>([]);
+  const [merchants, setMerchants] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [ccUsers, setCcUsers] = useState<any[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [landmarks, setLandmarks] = useState<any[]>([]);
@@ -61,125 +65,153 @@ export default function FOMOrdersPage() {
 
   const isInitialLoad = useRef(true);
 
-  const fetchOrders = useCallback(async (payload?: any) => {
-    if (!user?.uid) return;
+  const fetchOrders = useCallback(
+    async (payload?: any) => {
+      if (!user?.uid) return;
 
-    if (payload && payload.eventType) {
-      const matchFilters = (order: Order) => {
-        const matchesFom = order.fom_assigned === user.uid;
-        const matchesStatus = order.status === "fom" || order.status === "accounting";
-        const matchesMerchant = !filterMerchant || order.merchant === filterMerchant;
-        const createdAt = new Date(order.created_at);
-        const matchesStart = !startDate || createdAt >= new Date(`${startDate}T00:00:00Z`);
-        const matchesEnd = !endDate || createdAt <= new Date(`${endDate}T23:59:59Z`);
-        return matchesFom && matchesStatus && matchesMerchant && matchesStart && matchesEnd;
-      };
-
-      if (payload.eventType === "INSERT") {
-        if (matchFilters(payload.new)) {
-          setOrders((prev) => {
-            if (prev.some((o) => o.id === payload.new.id)) return prev;
-            return [payload.new, ...prev];
-          });
-          setTotalCount((c) => (c !== null ? c + 1 : 1));
-        }
-      } else if (payload.eventType === "UPDATE") {
-        if (matchFilters(payload.new)) {
-          setOrders((prev) =>
-            prev.map((o) => (o.id === payload.new.id ? payload.new : o))
+      if (payload && payload.eventType) {
+        const matchFilters = (order: Order) => {
+          const matchesFom = order.fom_assigned === user.uid;
+          const matchesStatus =
+            order.status === "fom" || order.status === "accounting";
+          const matchesMerchant =
+            !filterMerchant || order.merchant === filterMerchant;
+          const createdAt = new Date(order.created_at);
+          const matchesStart =
+            !startDate || createdAt >= new Date(`${startDate}T00:00:00Z`);
+          const matchesEnd =
+            !endDate || createdAt <= new Date(`${endDate}T23:59:59Z`);
+          return (
+            matchesFom &&
+            matchesStatus &&
+            matchesMerchant &&
+            matchesStart &&
+            matchesEnd
           );
-        } else {
+        };
+
+        if (payload.eventType === "INSERT") {
+          if (matchFilters(payload.new)) {
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === payload.new.id)) return prev;
+              return [payload.new, ...prev];
+            });
+            setTotalCount((c) => (c !== null ? c + 1 : 1));
+          }
+        } else if (payload.eventType === "UPDATE") {
+          if (matchFilters(payload.new)) {
+            setOrders((prev) =>
+              prev.map((o) => (o.id === payload.new.id ? payload.new : o)),
+            );
+          } else {
+            setOrders((prev) => {
+              const exists = prev.some((o) => o.id === payload.new.id);
+              if (exists) {
+                setTotalCount((c) => (c !== null ? Math.max(0, c - 1) : 0));
+                return prev.filter((o) => o.id !== payload.new.id);
+              }
+              return prev;
+            });
+          }
+        } else if (payload.eventType === "DELETE") {
           setOrders((prev) => {
-            const exists = prev.some((o) => o.id === payload.new.id);
+            const exists = prev.some((o) => o.id === payload.old.id);
             if (exists) {
               setTotalCount((c) => (c !== null ? Math.max(0, c - 1) : 0));
-              return prev.filter((o) => o.id !== payload.new.id);
+              return prev.filter((o) => o.id !== payload.old.id);
             }
             return prev;
           });
         }
-      } else if (payload.eventType === "DELETE") {
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === payload.old.id);
-          if (exists) {
-            setTotalCount((c) => (c !== null ? Math.max(0, c - 1) : 0));
-            return prev.filter((o) => o.id !== payload.old.id);
-          }
-          return prev;
-        });
-      }
-      return;
-    }
-
-    if (isInitialLoad.current) {
-      setLoading(true);
-      isInitialLoad.current = false;
-    }
-    setError(null);
-
-    try {
-      let ordersQuery = supabase!
-        .from("orders")
-        .select("id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider_name, landmark, rider_assigned_at, payment_to_rider, fom_delivery_status, payment_method, bank, quantity_delivered, amount_paid, fom_comment, fom_assigned, status, merchant, payment_to_merchant, delivered_at", { count: "exact" });
-
-      if (startDate) {
-        ordersQuery = ordersQuery.gte("created_at", `${startDate}T00:00:00Z`);
-      }
-      if (endDate) {
-        ordersQuery = ordersQuery.lte("created_at", `${endDate}T23:59:59Z`);
+        return;
       }
 
-      const [
-        { data: ordersData, count, error: fetchError },
-        { data: merchantsData },
-        { data: landmarkData },
-        { data: fomUserData },
-        { data: ccUserData },
-      ] = await Promise.all([
-        (() => {
-          let q = ordersQuery
-            .eq("fom_assigned", user.uid)
-            .or("status.eq.fom,status.eq.accounting");
-          if (filterMerchant) q = q.eq("merchant", filterMerchant);
-          return q.order("created_at", { ascending: false }).range(0, PAGE_SIZE - 1);
-        })(),
-        supabase!
-          .from("merchants")
-          .select("name")
-          .eq("is_active", true)
-          .order("name"),
-        supabase!
-          .from("landmarks")
-          .select("*")
-          .eq("is_active", true)
-          .order("name"),
-        supabase!.from("users").select("id, display_name").eq("role", "fom"),
-        supabase!
-          .from("users")
-          .select("id, display_name")
-          .eq("role", "customer_service"),
-      ]);
-
-      if (fetchError) throw fetchError;
-
-      if (merchantsData) {
-        setMerchantOptions(merchantsData.map((m: any) => m.name));
+      if (isInitialLoad.current) {
+        setLoading(true);
+        isInitialLoad.current = false;
       }
-      if (landmarkData) {
-        setLandmarks(landmarkData);
+      setError(null);
+
+      try {
+        let ordersQuery = supabase!
+          .from("orders")
+          .select(
+            "id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider, landmark, rider_assigned_at, payment_to_rider, fom_delivery_status, payment_method, bank, quantity_delivered, amount_paid, fom_comment, fom_assigned, status, merchant, payment_to_merchant, delivered_at",
+            { count: "exact" },
+          );
+
+        if (startDate) {
+          ordersQuery = ordersQuery.gte("created_at", `${startDate}T00:00:00Z`);
+        }
+        if (endDate) {
+          ordersQuery = ordersQuery.lte("created_at", `${endDate}T23:59:59Z`);
+        }
+
+        const [
+          { data: ordersData, count, error: fetchError },
+          { data: merchantsData },
+          { data: landmarkData },
+          { data: fomUserData },
+          { data: ccUserData },
+          { data: ridersData },
+        ] = await Promise.all([
+          (() => {
+            let q = ordersQuery
+              .eq("fom_assigned", user.uid)
+              .or("status.eq.fom,status.eq.accounting");
+            if (filterMerchant) q = q.eq("merchant", filterMerchant);
+            return q
+              .order("created_at", { ascending: false })
+              .range(0, PAGE_SIZE - 1);
+          })(),
+          supabase!
+            .from("merchants")
+            .select("id, name")
+            .eq("is_active", true)
+            .order("name"),
+          supabase!
+            .from("landmarks")
+            .select("*")
+            .eq("is_active", true)
+            .order("name"),
+          supabase!.from("users").select("id, display_name").eq("role", "fom"),
+          supabase!
+            .from("users")
+            .select("id, display_name")
+            .eq("role", "customer_service"),
+          supabase!
+            .from("riders")
+            .select("id, name")
+            .eq("is_active", true)
+            .order("name"),
+        ]);
+
+        if (fetchError) throw fetchError;
+
+        if (merchantsData) {
+          setMerchants(merchantsData as { id: string; name: string }[]);
+          setMerchantOptions(merchantsData.map((m: any) => m.name));
+        }
+        if (landmarkData) {
+          setLandmarks(landmarkData);
+        }
+        if (ridersData) {
+          setRiders(ridersData as { id: string; name: string }[]);
+        }
+        setOrders((ordersData ?? []) as Order[]);
+        setTotalCount(count ?? 0);
+        setFoms((fomUserData ?? []) as any[]);
+        setCcUsers((ccUserData ?? []) as any[]);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Unable to load FOM orders.",
+        );
+      } finally {
+        setLoading(false);
       }
-      setOrders((ordersData ?? []) as Order[]);
-      setTotalCount(count ?? 0);
-      setFoms((fomUserData ?? []) as any[]);
-      setCcUsers((ccUserData ?? []) as any[]);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to load FOM orders.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.uid, startDate, endDate, filterMerchant]);
+    },
+    [user?.uid, startDate, endDate, filterMerchant],
+  );
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -194,7 +226,7 @@ export default function FOMOrdersPage() {
   );
 
   const startEditing = useCallback((order: Order) => {
-    setEditingId(order.id);
+    setEditingId(order.id || null);
     setEditForm({ ...order });
   }, []);
 
@@ -221,8 +253,13 @@ export default function FOMOrdersPage() {
       !!originalOrder?.delivered_at;
 
     const finalStatuses = ["delivered", "failed", "returned", "canceled"];
-    const isNowFinal = finalStatuses.includes(editForm.fom_delivery_status?.toLowerCase() || "");
-    const wasAlreadyFinal = finalStatuses.includes(originalOrder?.fom_delivery_status?.toLowerCase() || "") || !!originalOrder?.delivered_at;
+    const isNowFinal = finalStatuses.includes(
+      editForm.fom_delivery_status?.toLowerCase() || "",
+    );
+    const wasAlreadyFinal =
+      finalStatuses.includes(
+        originalOrder?.fom_delivery_status?.toLowerCase() || "",
+      ) || !!originalOrder?.delivered_at;
 
     const isNewlyFinal = isNowFinal && !wasAlreadyFinal;
 
@@ -236,9 +273,13 @@ export default function FOMOrdersPage() {
 
     let paymentToRiderPayload = {};
     if (isNewlyFailed) {
-      paymentToRiderPayload = { payment_to_rider: Number(originalOrder?.payment_to_rider || 0) / 2 };
+      paymentToRiderPayload = {
+        payment_to_rider: Number(originalOrder?.payment_to_rider || 0) / 2,
+      };
     } else if (isUnFailed) {
-      paymentToRiderPayload = { payment_to_rider: Number(originalOrder?.payment_to_rider || 0) * 2 };
+      paymentToRiderPayload = {
+        payment_to_rider: Number(originalOrder?.payment_to_rider || 0) * 2,
+      };
     }
 
     setIsSaving(true);
@@ -286,13 +327,37 @@ export default function FOMOrdersPage() {
   // Merchant filtering is now done server-side in the Supabase query.
   const ordersByMerchant = orders;
 
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => {
+      if (m.id && m.name) map.set(m.id, m.name);
+    });
+    return map;
+  }, [merchants]);
+
+  const riderMap = useMemo(() => {
+    const map = new Map<string, string>();
+    riders.forEach((r) => {
+      if (r.id && r.name) map.set(r.id, r.name);
+    });
+    return map;
+  }, [riders]);
+
+  const landmarkMap = useMemo(() => {
+    const map = new Map<string, string>();
+    landmarks.forEach((l) => {
+      if (l.id && l.name) map.set(l.id, l.name);
+    });
+    return map;
+  }, [landmarks]);
+
   const columns = useMemo<DataTableColumn[]>(
     () => [
       {
         key: "id",
         label: "Order ID",
-        render: (row) => `#${String(row.id).split("-")[0]}`,
-        getSearchableText: (row) => String(row.id).split("-")[0],
+        render: (row) => `#${String(row.id)}`,
+        getSearchableText: (row) => String(row.id),
       },
       {
         key: "fom_assigned_at",
@@ -331,16 +396,23 @@ export default function FOMOrdersPage() {
       },
       {
         key: "items",
-        label: "Product",
+        label: "Merchant / Product",
         render: (row) => (
-          <div className="text-xs truncate">
-            {((row.items as any[]) || [])
-              .map((i) => `${i.quantity}x ${i.name}`)
-              .join(", ") || "—"}
+          <div className="py-1 space-y-0.5">
+            <div className="text-xs font-semibold text-foreground">
+              {merchantMap.get(String((row as any).merchant ?? "")) ||
+                (row as any).merchant ||
+                "—"}
+            </div>
+            <div className="text-[11px] text-muted-foreground truncate">
+              {((row.items as any[]) || [])
+                .map((i) => `${i.quantity}x ${i.name}`)
+                .join(", ") || "—"}
+            </div>
           </div>
         ),
         getSearchableText: (row) =>
-          ((row.items as any[]) || []).map((i) => i.name).join(", "),
+          `${merchantMap.get(String((row as any).merchant ?? "")) || (row as any).merchant || ""} ${((row.items as any[]) || []).map((i) => i.name).join(", ")}`,
       },
       {
         key: "order_price",
@@ -355,14 +427,16 @@ export default function FOMOrdersPage() {
         label: "Rider / Landmark",
         render: (row) => (
           <div className="py-1">
-            <div className="text-xs">{(row as any).rider_name || "—"}</div>
+            <div className="text-xs">
+              {riderMap.get(String((row as any).rider ?? "")) || "—"}
+            </div>
             <div className="text-[10px] text-muted-foreground truncate">
-              {(row as any).landmark || "—"}
+              {landmarkMap.get(String((row as any).landmark ?? "")) || "—"}
             </div>
           </div>
         ),
         getSearchableText: (row) =>
-          `${(row as any).rider_name || ""} ${(row as any).landmark || ""}`,
+          `${riderMap.get(String((row as any).rider ?? "")) || ""} ${landmarkMap.get(String((row as any).landmark ?? "")) || ""}`,
       },
       {
         key: "rider_assigned_at",
@@ -565,7 +639,7 @@ export default function FOMOrdersPage() {
         getSearchableText: (row) => (row as any).fom_comment || "",
       },
     ],
-    [editingId, editForm],
+    [editingId, editForm, merchantMap, riderMap, landmarkMap, foms],
   );
 
   const renderRowActions = useCallback(
@@ -681,7 +755,9 @@ export default function FOMOrdersPage() {
           <div className="rounded-xl border border-border bg-muted/50 px-4 py-2 text-sm text-foreground">
             {ordersByMerchant.length} active order
             {ordersByMerchant.length === 1 ? "" : "s"}
-            {totalCount !== null && totalCount > orders.length ? ` (${totalCount} total in DB)` : ""}
+            {totalCount !== null && totalCount > orders.length
+              ? ` (${totalCount} total in DB)`
+              : ""}
           </div>
         </div>
 
@@ -712,8 +788,11 @@ export default function FOMOrdersPage() {
               setLoadingMore(true);
               const from = nextPage * PAGE_SIZE;
               const to = from + PAGE_SIZE - 1;
-              let q = supabase!.from("orders")
-                .select("id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider_name, landmark, rider_assigned_at, payment_to_rider, fom_delivery_status, payment_method, bank, quantity_delivered, amount_paid, fom_comment, fom_assigned, status, merchant, payment_to_merchant, delivered_at")
+              let q = supabase!
+                .from("orders")
+                .select(
+                  "id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider, landmark, rider_assigned_at, payment_to_rider, fom_delivery_status, payment_method, bank, quantity_delivered, amount_paid, fom_comment, fom_assigned, status, merchant, payment_to_merchant, delivered_at",
+                )
                 .eq("fom_assigned", user!.uid)
                 .or("status.eq.fom,status.eq.accounting")
                 .order("created_at", { ascending: false })
@@ -722,7 +801,10 @@ export default function FOMOrdersPage() {
               if (startDate) q = q.gte("created_at", `${startDate}T00:00:00Z`);
               if (endDate) q = q.lte("created_at", `${endDate}T23:59:59Z`);
               const { data } = await q;
-              if (data) { setOrders(prev => [...prev, ...data as Order[]]); setPage(nextPage); }
+              if (data) {
+                setOrders((prev) => [...prev, ...(data as Order[])]);
+                setPage(nextPage);
+              }
               setLoadingMore(false);
             }}
             loadingMore={loadingMore}

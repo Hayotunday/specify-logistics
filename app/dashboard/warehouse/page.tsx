@@ -13,7 +13,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn, printTicket } from "@/lib/utils";
-import { Order } from "@/lib/types";
+import { MerchantRow, Order } from "@/lib/types";
 import { Check, Edit2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import OrderSearchFilter from "@/components/order-search-filter";
@@ -65,6 +65,7 @@ export default function WarehouseOrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMerchant, setFilterMerchant] = useState<string | null>(null);
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
+  const [merchants, setMerchants] = useState<MerchantRow[]>([]);
   // Pause realtime while the user is editing a row, searching or filtering
   const [realtimePaused, setRealtimePaused] = useState(false);
   const [page, setPage] = useState(0);
@@ -151,7 +152,12 @@ export default function WarehouseOrdersPage() {
 
         if (ccUserData) setCcUsers(ccUserData);
         if (fomUserData) setFomUsers(fomUserData);
-        if (merchantsList) setMerchantOptions(merchantsList.map((m) => m.name || "").filter(Boolean));
+        if (merchantsList) {
+          setMerchants(merchantsList);
+          setMerchantOptions(
+            merchantsList.map((m) => m.name || "").filter(Boolean),
+          );
+        }
         setOrders(result.data);
         setTotalCount(result.count ?? 0);
         setPage(0);
@@ -169,7 +175,7 @@ export default function WarehouseOrdersPage() {
   }, [fetchOrders]);
 
   const startEditing = useCallback((order: Order) => {
-    setEditingId(order.id);
+    setEditingId(order.id!);
     setEditForm({ ...order });
   }, []);
 
@@ -188,21 +194,31 @@ export default function WarehouseOrdersPage() {
       editForm &&
       editForm.id === activeCommentOrderId
     ) {
-      // Update the editForm's warehouse_comment with the tempComment
+      // Update the editForm's wh_comment with the tempComment
       setEditForm((prev) =>
-        prev ? { ...prev, warehouse_comment: tempComment } : null,
+        prev ? { ...prev, wh_comment: tempComment } : null,
       );
     }
     setCommentModalOpen(false);
   }, [activeCommentOrderId, editForm]);
+
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => {
+      if (m.id && m.name) {
+        map.set(m.id, m.name);
+      }
+    });
+    return map;
+  }, [merchants]);
 
   const columns = useMemo<DataTableColumn[]>(
     () => [
       {
         key: "id",
         label: "Order ID",
-        render: (row) => `#${String(row.id || "").split("-")[0]}`,
-        getSearchableText: (row) => String(row.id || "").split("-")[0],
+        render: (row) => `#${String(row.id || "")}`,
+        getSearchableText: (row) => String(row.id || ""),
       },
       {
         key: "created_at",
@@ -277,8 +293,19 @@ export default function WarehouseOrdersPage() {
       {
         key: "merchant",
         label: "Merchant Name",
-        render: (row) => (row.merchant as any) || "—",
-        getSearchableText: (row) => (row.merchant as any) || "",
+        render: (row) => {
+          const name =
+            (row.merchant ? merchantMap.get(String(row.merchant)) : null) ||
+            (row.merchant as any) ||
+            "—";
+          return name;
+        },
+        getSearchableText: (row) => {
+          const name =
+            (row.merchant ? merchantMap.get(String(row.merchant)) : null) ||
+            (row.merchant as any);
+          return name ? String(name) : "";
+        },
       },
       {
         key: "cc_comment",
@@ -314,13 +341,13 @@ export default function WarehouseOrdersPage() {
                 setEditForm((prev) =>
                   prev
                     ? {
-                        ...prev,
-                        inventory_status: e.target.value as any,
-                        fom_assigned:
-                          e.target.value === "out-of-stock"
-                            ? ""
-                            : prev?.fom_assigned,
-                      }
+                      ...prev,
+                      inventory_status: e.target.value as any,
+                      fom_assigned:
+                        e.target.value === "out-of-stock"
+                          ? ""
+                          : prev?.fom_assigned,
+                    }
                     : null,
                 )
               }
@@ -368,28 +395,28 @@ export default function WarehouseOrdersPage() {
             ?.display_name || "",
       },
       {
-        key: "warehouse_comment",
+        key: "wh_comment",
         label: "Warehouse Comment",
         longText: true,
         render: (row) =>
           editingId === String(row.id) ? (
             <Input
               className="h-8 text-xs cursor-pointer"
-              value={(editForm as any)?.warehouse_comment || "—"}
+              value={(editForm as any)?.wh_comment || "—"}
               readOnly
               onClick={() =>
                 openCommentModal(
                   String(row.id),
-                  (editForm as any)?.warehouse_comment || "",
+                  (editForm as any)?.wh_comment || "",
                 )
               }
             />
           ) : (
             <span className="text-xs truncate block max-w-30">
-              {(row as any).warehouse_comment || "—"}
+              {(row as any).wh_comment || "—"}
             </span>
           ),
-        getSearchableText: (row) => (row as any).warehouse_comment || "",
+        getSearchableText: (row) => (row as any).wh_comment || "",
       },
       {
         key: "extracted_by",
@@ -402,7 +429,7 @@ export default function WarehouseOrdersPage() {
             ?.display_name || "",
       },
     ],
-    [editingId, editForm, fomUsers, ccUsers, openCommentModal],
+    [editingId, editForm, fomUsers, ccUsers, openCommentModal, merchantMap],
   );
 
   useSupabaseRealtime(
@@ -435,37 +462,45 @@ export default function WarehouseOrdersPage() {
 
     try {
       await updateWarehouseOrder(
-        editForm.id,
+        editForm.id!,
         warehouseStatus === "out-of-stock"
           ? {
-              status: "warehouse",
-              wh_delivery_status: editForm.wh_delivery_status?.toLowerCase() as any,
-              inventory_status: warehouseStatus.toLowerCase() as any,
-              wh_comment: (editForm as any).warehouse_comment,
-              updated_at: new Date().toISOString(),
-            }
+            status: "warehouse",
+            wh_delivery_status: editForm.wh_delivery_status?.toLowerCase() as any,
+            inventory_status: warehouseStatus.toLowerCase() as any,
+            wh_comment: (editForm as any).wh_comment,
+            updated_at: new Date().toISOString(),
+          }
           : {
-              status: "warehouse",
-              wh_delivery_status: editForm.wh_delivery_status?.toLowerCase() as any,
-              inventory_status: warehouseStatus.toLowerCase() as any,
-              wh_comment: (editForm as any).warehouse_comment,
-              fom_assigned: validFomId,
-              fom_assigned_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              prints: (editForm.prints || 0) + 1,
-            },
+            status: "warehouse",
+            wh_delivery_status: editForm.wh_delivery_status?.toLowerCase() as any,
+            inventory_status: warehouseStatus.toLowerCase() as any,
+            wh_comment: (editForm as any).wh_comment,
+            fom_assigned: validFomId,
+            fom_assigned_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            prints: (editForm.prints || 0) + 1,
+          },
       );
       const updatedOrder = { ...editForm };
       setEditingId(null);
       setEditForm(null);
-      warehouseStatus !== "out-of-stock" && printTicket(updatedOrder as Order);
+      warehouseStatus !== "out-of-stock" &&
+        printTicket({
+          ...updatedOrder,
+          merchant:
+            (updatedOrder.merchant
+              ? merchantMap.get(String(updatedOrder.merchant))
+              : null) ||
+            updatedOrder.merchant,
+        } as Order);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update order");
       console.error(err as any);
     } finally {
       setIsSaving(false);
     }
-  }, [editForm, fomUsers]);
+  }, [editForm, fomUsers, merchantMap]);
 
   // Status filtering is already done server-side in the Supabase query.
   const actionableOrders = orders;
@@ -484,15 +519,19 @@ export default function WarehouseOrdersPage() {
     // Merchant filtering is done server-side; only search term filtering remains client-side.
     return actionableOrders.filter((order) => {
       if (!term) return true;
+      const merchantName =
+        (order.merchant ? merchantMap.get(String(order.merchant)) : null) ||
+        order.merchant ||
+        "";
       return (
         (order.customer_name || "").toLowerCase().includes(term) ||
         (order.delivery_address || "").toLowerCase().includes(term) ||
-        (order.merchant || "").toLowerCase().includes(term) ||
+        merchantName.toLowerCase().includes(term) ||
         (order.id || "").toLowerCase().includes(term) ||
         (order.phone_numbers || []).join(" ").toLowerCase().includes(term)
       );
     });
-  }, [actionableOrders, searchTerm]);
+  }, [actionableOrders, searchTerm, merchantMap]);
 
   const renderRowActions = useCallback(
     (row: any) => {

@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 // Auth and profile are provided by `AuthProvider` via Supabase now.
 
-export const dynamic = "force-dynamic";
+const VALID_ROLES = ["customer_service", "warehouse", "fom", "accounting", "admin"];
 
 /**
  * Dashboard router: Redirects to role-specific dashboard
@@ -30,7 +30,8 @@ export default function DashboardPage() {
     }
 
     // Route to role-specific dashboard
-    router.replace(`/dashboard/${user.role}`);
+    const role = user.role && VALID_ROLES.includes(user.role) ? user.role : "customer_service";
+    router.replace(`/dashboard/${role}`);
   }, [user, loading, router]);
 
   return (

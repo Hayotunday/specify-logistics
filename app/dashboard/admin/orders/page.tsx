@@ -46,7 +46,13 @@ export default function AdminOrdersPage() {
   const { stats, refreshStats } = useGlobalStats();
 
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
+  const [merchants, setMerchants] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [riderOptions, setRiderOptions] = useState<string[]>([]);
+  const [ridersList, setRidersList] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [landmarks, setLandmarks] = useState<any[]>([]);
   const [filterMerchant, setFilterMerchant] = useState<string | null>(null);
   const [editedFields, setEditedFields] = useState<Set<string>>(new Set());
@@ -132,12 +138,12 @@ export default function AdminOrdersPage() {
       ] = await Promise.all([
         supabase!
           .from("merchants")
-          .select("name")
+          .select("id, name")
           .eq("is_active", true)
           .order("name"),
         supabase!
           .from("riders")
-          .select("name")
+          .select("id, name")
           .eq("is_active", true)
           .order("name"),
         supabase!.from("users").select("id, display_name").eq("role", "fom"),
@@ -153,11 +159,13 @@ export default function AdminOrdersPage() {
       if (landmarkData) setLandmarks(landmarkData);
 
       if (merchantData) {
+        setMerchants(merchantData as { id: string; name: string }[]);
         setMerchantOptions(
           merchantData.map((row: any) => row.name).filter(Boolean),
         );
       }
       if (riderData) {
+        setRidersList(riderData as { id: string; name: string }[]);
         setRiderOptions(riderData.map((row: any) => row.name).filter(Boolean));
       }
 
@@ -165,7 +173,7 @@ export default function AdminOrdersPage() {
         let query = supabase!
           .from("orders")
           .select(
-            "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, payment_to_rider, inventory_status, wh_delivery_status, fom_delivery_status, fom_assigned, rider_name, rider_assigned_at, payment_method, payment_confirmed, payment_verified_at, bank, landmark, warehouse_comment, cc_comment, fom_comment, updated_at, extracted_by, amount_paid",
+            "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, payment_to_rider, inventory_status, wh_delivery_status, fom_delivery_status, fom_assigned, rider, rider_assigned_at, payment_method, payment_confirmed, payment_verified_at, bank, landmark, wh_comment, cc_comment, fom_comment, updated_at, extracted_by, amount_paid",
             { count: "exact" },
           );
         if (filterMerchant) {
@@ -210,7 +218,7 @@ export default function AdminOrdersPage() {
   );
 
   const startEditing = useCallback((order: Order) => {
-    setEditingId(order.id);
+    setEditingId(order.id!);
     setEditForm({ ...order });
     setEditedFields(new Set());
   }, []);
@@ -261,7 +269,7 @@ export default function AdminOrdersPage() {
 
   const handleSave = async () => {
     if (!editForm) return;
-    setActionLoading(editForm.id);
+    setActionLoading(editForm.id!);
 
     try {
       const { error: updateError } = await supabase!
@@ -277,8 +285,8 @@ export default function AdminOrdersPage() {
           fom_delivery_status: editForm.fom_delivery_status?.toLowerCase(),
           inventory_status: (editForm as any).inventory_status?.toLowerCase(),
           fom_assigned: (editForm as any).fom_assigned,
-          warehouse_comment: (editForm as any).warehouse_comment,
-          rider_name: (editForm as any).rider_name,
+          wh_comment: (editForm as any).wh_comment,
+          rider: (editForm as any).rider,
           payment_to_rider: (editForm as any).payment_to_rider,
           payment_method: (editForm as any).payment_method?.toLowerCase(),
           payment_confirmed:
@@ -330,6 +338,30 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => {
+      if (m.id && m.name) map.set(m.id, m.name);
+    });
+    return map;
+  }, [merchants]);
+
+  const riderMap = useMemo(() => {
+    const map = new Map<string, string>();
+    ridersList.forEach((r) => {
+      if (r.id && r.name) map.set(r.id, r.name);
+    });
+    return map;
+  }, [ridersList]);
+
+  const landmarkMap = useMemo(() => {
+    const map = new Map<string, string>();
+    landmarks.forEach((l) => {
+      if (l.id && l.name) map.set(l.id, l.name);
+    });
+    return map;
+  }, [landmarks]);
+
   const columns = useMemo<DataTableColumn[]>(
     () => [
       {
@@ -338,7 +370,7 @@ export default function AdminOrdersPage() {
         render: (row) => (
           <div className="py-1">
             <div className="font-mono text-[10px] uppercase">
-              #{String((row as any).id).split("-")[0]}
+              #{String((row as any).id)}
             </div>
             <div className="text-[10px] text-muted-foreground whitespace-nowrap">
               {new Date((row as any).created_at as any).toLocaleString([], {
@@ -349,7 +381,7 @@ export default function AdminOrdersPage() {
           </div>
         ),
         getSearchableText: (row) =>
-          `${String((row as any).id).split("-")[0]} ${new Date(
+          `${String((row as any).id)} ${new Date(
             (row as any).created_at as any,
           ).toLocaleString([], {
             dateStyle: "short",
@@ -434,15 +466,17 @@ export default function AdminOrdersPage() {
                   }}
                 >
                   <option value="">Select Merchant</option>
-                  {merchantOptions.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
+                  {merchants.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
                     </option>
                   ))}
                 </select>
               ) : (
                 <div className="text-xs font-medium">
-                  {(row as any).merchant as any}
+                  {merchantMap.get(String((row as any).merchant ?? "")) ||
+                    (row as any).merchant ||
+                    "—"}
                 </div>
               )}
               <div className="text-[10px] truncate italic">
@@ -454,7 +488,7 @@ export default function AdminOrdersPage() {
           );
         },
         getSearchableText: (row) =>
-          `${(row as any).merchant as any} ${(
+          `${merchantMap.get(String((row as any).merchant ?? "")) || (row as any).merchant || ""} ${(
             ((row as any).items as any[]) || []
           )
             .map((i) => `${i.quantity}x ${i.name}`)
@@ -469,7 +503,7 @@ export default function AdminOrdersPage() {
             (isEditing ? editForm?.total_amount : row.total_amount) || 0,
           );
           const landmarkfee = Number(
-            landmarks!.find((l) => l.name === row.landmark)?.price || 0,
+            landmarks!.find((l) => l.id === row.landmark)?.price || 0,
           );
           const toMerchant = total - landmarkfee;
           return (
@@ -495,7 +529,7 @@ export default function AdminOrdersPage() {
               )}
               <div className="text-[9px] text-muted-foreground">
                 Landmark:{" "}
-                {`${row.landmark || "—"} * ${formatCurrency(landmarkfee)}`}
+                {`${landmarkMap.get(String(row.landmark ?? "")) || row.landmark || "—"} * ${formatCurrency(landmarkfee)}`}
               </div>
               <div className="text-[10px] text-emerald-600 font-semibold">
                 Merchant: {formatCurrency(toMerchant)}
@@ -678,24 +712,27 @@ export default function AdminOrdersPage() {
               {isEditing ? (
                 <select
                   className="h-7 w-full rounded-md border px-1 text-[10px]"
-                  value={(editForm as any)?.rider_name || ""}
+                  value={(editForm as any)?.rider || ""}
                   onChange={(e) =>
                     setEditForm((p: any) => ({
                       ...p,
-                      rider_name: e.target.value,
+                      rider: e.target.value,
                     }))
                   }
                 >
                   <option value="">Select Rider</option>
-                  {riderOptions.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
+                  {ridersList.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
                     </option>
                   ))}
                 </select>
               ) : (
                 <div className="text-[10px] text-muted-foreground italic">
-                  Rider: {(row as any).rider_name || "—"}
+                  Rider:{" "}
+                  {riderMap.get(String((row as any).rider ?? "")) ||
+                    (row as any).rider ||
+                    "—"}
                 </div>
               )}
               {(row as any).rider_assigned_at && (
@@ -714,7 +751,7 @@ export default function AdminOrdersPage() {
           `${
             fomUsers.find((u) => u.id === (row as any).fom_assigned)
               ?.display_name
-          } ${(row as any).rider_name} ${new Date(
+          } ${riderMap.get(String((row as any).rider ?? "")) || (row as any).rider || ""} ${new Date(
             (row as any).rider_assigned_at,
           ).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}`,
       },
@@ -860,20 +897,20 @@ export default function AdminOrdersPage() {
         getSearchableText: (row) => `${(row as any).cc_comment as string}`,
       },
       {
-        key: "warehouse_comment",
+        key: "wh_comment",
         label: "WH Note",
         render: (row) => {
           const isEditing = editingId === String(row.id);
           const value =
             ((isEditing
-              ? editForm?.warehouse_comment
-              : (row as any).warehouse_comment) as string) || "—";
+              ? editForm?.wh_comment
+              : (row as any).wh_comment) as string) || "—";
           return (
             <div
               className="text-[9px] whitespace-normal wrap-break-word cursor-pointer py-1 leading-tight"
               onClick={() =>
                 openModal(
-                  "warehouse_comment",
+                  "wh_comment",
                   value === "—" ? "" : value,
                   String(row.id),
                 )
@@ -883,8 +920,7 @@ export default function AdminOrdersPage() {
             </div>
           );
         },
-        getSearchableText: (row) =>
-          `${(row as any).warehouse_comment as string}`,
+        getSearchableText: (row) => `${(row as any).wh_comment as string}`,
       },
       {
         key: "fom_comment",
@@ -933,8 +969,11 @@ export default function AdminOrdersPage() {
       editForm,
       editedFields,
       merchantOptions,
+      merchantMap,
       fomUsers,
       riderOptions,
+      riderMap,
+      landmarkMap,
       ccUsers,
     ],
   );
@@ -1137,7 +1176,7 @@ export default function AdminOrdersPage() {
               let q = supabase!
                 .from("orders")
                 .select(
-                  "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, payment_to_rider, inventory_status, wh_delivery_status, fom_delivery_status, fom_assigned, rider_name, rider_assigned_at, payment_method, payment_confirmed, payment_verified_at, bank, landmark, warehouse_comment, cc_comment, fom_comment, updated_at",
+                  "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, payment_to_rider, inventory_status, wh_delivery_status, fom_delivery_status, fom_assigned, rider, rider_assigned_at, payment_method, payment_confirmed, payment_verified_at, bank, landmark, wh_comment, cc_comment, fom_comment, updated_at",
                 )
                 .order("created_at", { ascending: false })
                 .range(from, to);

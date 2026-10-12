@@ -13,7 +13,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Order } from "@/lib/types";
+import { Order, MerchantRow } from "@/lib/types";
 import DataTable, { type DataTableColumn } from "@/components/data-table";
 import {
   Dialog,
@@ -66,6 +66,7 @@ export default function OrdersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [ccUsers, setCcUsers] = useState<any[]>([]);
   const [fomUsers, setFomUsers] = useState<any[]>([]);
+  const [merchants, setMerchants] = useState<MerchantRow[]>([]);
   const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMerchant, setFilterMerchant] = useState<string | null>(null);
@@ -92,84 +93,96 @@ export default function OrdersPage() {
 
   const isInitialLoad = useRef(true);
 
-  const fetchOrders = useCallback(async (payload?: any) => {
-    if (payload && payload.eventType) {
-      const matchFilters = (order: Order) => {
-        const matchesMerchant = !filterMerchant || order.merchant === filterMerchant;
-        const createdAt = new Date(order.created_at);
-        const matchesStart = !startDate || createdAt >= new Date(`${startDate}T00:00:00Z`);
-        const matchesEnd = !endDate || createdAt <= new Date(`${endDate}T23:59:59Z`);
-        return matchesMerchant && matchesStart && matchesEnd;
-      };
+  const fetchOrders = useCallback(
+    async (payload?: any) => {
+      if (payload && payload.eventType) {
+        const matchFilters = (order: Order) => {
+          const matchesMerchant =
+            !filterMerchant || order.merchant === filterMerchant;
+          const createdAt = new Date(order.created_at);
+          const matchesStart =
+            !startDate || createdAt >= new Date(`${startDate}T00:00:00Z`);
+          const matchesEnd =
+            !endDate || createdAt <= new Date(`${endDate}T23:59:59Z`);
+          return matchesMerchant && matchesStart && matchesEnd;
+        };
 
-      if (payload.eventType === "INSERT") {
-        if (matchFilters(payload.new)) {
+        if (payload.eventType === "INSERT") {
+          if (matchFilters(payload.new)) {
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === payload.new.id)) return prev;
+              return [payload.new, ...prev];
+            });
+            setTotalCount((c) => (c !== null ? c + 1 : 1));
+          }
+        } else if (payload.eventType === "UPDATE") {
+          if (matchFilters(payload.new)) {
+            setOrders((prev) =>
+              prev.map((o) => (o.id === payload.new.id ? payload.new : o)),
+            );
+          } else {
+            setOrders((prev) => {
+              const exists = prev.some((o) => o.id === payload.new.id);
+              if (exists) {
+                setTotalCount((c) => (c !== null ? Math.max(0, c - 1) : 0));
+                return prev.filter((o) => o.id !== payload.new.id);
+              }
+              return prev;
+            });
+          }
+        } else if (payload.eventType === "DELETE") {
           setOrders((prev) => {
-            if (prev.some((o) => o.id === payload.new.id)) return prev;
-            return [payload.new, ...prev];
-          });
-          setTotalCount((c) => (c !== null ? c + 1 : 1));
-        }
-      } else if (payload.eventType === "UPDATE") {
-        if (matchFilters(payload.new)) {
-          setOrders((prev) =>
-            prev.map((o) => (o.id === payload.new.id ? payload.new : o))
-          );
-        } else {
-          setOrders((prev) => {
-            const exists = prev.some((o) => o.id === payload.new.id);
+            const exists = prev.some((o) => o.id === payload.old.id);
             if (exists) {
               setTotalCount((c) => (c !== null ? Math.max(0, c - 1) : 0));
-              return prev.filter((o) => o.id !== payload.new.id);
+              return prev.filter((o) => o.id !== payload.old.id);
             }
             return prev;
           });
         }
-      } else if (payload.eventType === "DELETE") {
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === payload.old.id);
-          if (exists) {
-            setTotalCount((c) => (c !== null ? Math.max(0, c - 1) : 0));
-            return prev.filter((o) => o.id !== payload.old.id);
-          }
-          return prev;
-        });
+        return;
       }
-      return;
-    }
 
-    if (isInitialLoad.current) {
-      setLoading(true);
-      isInitialLoad.current = false;
-    }
-    setError(null);
+      if (isInitialLoad.current) {
+        setLoading(true);
+        isInitialLoad.current = false;
+      }
+      setError(null);
 
-    try {
-      const [ccUserData, fomUserData, merchantsList, result] = await Promise.all([
-        fetchCustomerServiceUsers(),
-        fetchFomUsers(),
-        fetchMerchants(true),
-        fetchCustomerServiceOrders({
-          startDate,
-          endDate,
-          filterMerchant,
-          page: 0,
-          pageSize: PAGE_SIZE,
-        }),
-      ]);
+      try {
+        const [ccUserData, fomUserData, merchantsList, result] =
+          await Promise.all([
+            fetchCustomerServiceUsers(),
+            fetchFomUsers(),
+            fetchMerchants(true),
+            fetchCustomerServiceOrders({
+              startDate,
+              endDate,
+              filterMerchant,
+              page: 0,
+              pageSize: PAGE_SIZE,
+            }),
+          ]);
 
-      if (ccUserData) setCcUsers(ccUserData);
-      if (fomUserData) setFomUsers(fomUserData);
-      if (merchantsList) setMerchantOptions(merchantsList.map((m) => m.name || "").filter(Boolean));
+        if (ccUserData) setCcUsers(ccUserData);
+        if (fomUserData) setFomUsers(fomUserData);
+        if (merchantsList) {
+          setMerchants(merchantsList);
+          setMerchantOptions(
+            merchantsList.map((m) => m.name || "").filter(Boolean),
+          );
+        }
 
-      setOrders(result.data);
-      setTotalCount(result.count ?? 0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load orders.");
-    } finally {
-      setLoading(false);
-    }
-  }, [startDate, endDate, filterMerchant]);
+        setOrders(result.data);
+        setTotalCount(result.count ?? 0);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to load orders.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [startDate, endDate, filterMerchant],
+  );
 
   useEffect(() => {
     fetchOrders();
@@ -182,23 +195,37 @@ export default function OrdersPage() {
     realtimePaused,
   );
 
+  const merchantMap = useMemo(() => {
+    const map = new Map<string, string>();
+    merchants.forEach((m) => {
+      if (m.id && m.name) {
+        map.set(m.id, m.name);
+      }
+    });
+    return map;
+  }, [merchants]);
+
   const filteredOrders = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     // Merchant filtering is done server-side
     return orders.filter((order) => {
       if (!term) return true;
+      const merchantName =
+        (order.merchant ? merchantMap.get(String(order.merchant)) : null) ||
+        order.merchant ||
+        "";
       return (
         (order.customer_name || "").toLowerCase().includes(term) ||
         (order.delivery_address || "").toLowerCase().includes(term) ||
-        (order.merchant || "").toLowerCase().includes(term) ||
+        merchantName.toLowerCase().includes(term) ||
         (order.id || "").toLowerCase().includes(term) ||
         (order.phone_numbers || []).join(" ").toLowerCase().includes(term)
       );
     });
-  }, [orders, searchTerm]);
+  }, [orders, searchTerm, merchantMap]);
 
   const startEditing = useCallback((order: Order) => {
-    setEditingId(order.id);
+    setEditingId(order.id!);
     setEditForm({ ...order });
   }, []);
 
@@ -221,8 +248,8 @@ export default function OrdersPage() {
       {
         key: "id",
         label: "Order ID",
-        render: (row) => `#${String(row.id || "").split("-")[0]}`,
-        getSearchableText: (row) => String(row.id || "").split("-")[0],
+        render: (row) => `#${String(row.id || "")}`,
+        getSearchableText: (row) => String(row.id || ""),
       },
       {
         key: "created_at",
@@ -409,18 +436,30 @@ export default function OrdersPage() {
         label: "Merchant Name",
         render: (row) => {
           const isEditing = editingId === String(row.id);
+          const currentId = isEditing
+            ? editForm?.merchant
+            : (row.merchant as string | null | undefined);
+          const merchantName: string =
+            (currentId ? merchantMap.get(String(currentId)) : null) ||
+            (currentId ? String(currentId) : "") ||
+            "—";
           return isEditing ? (
             <Input
-              value={editForm?.merchant || ""}
+              value={merchantName === "—" ? "" : merchantName}
               readOnly
               className="h-8 text-sm cursor-pointer"
               onClick={() => openModal("merchant", editForm?.merchant || "")}
             />
           ) : (
-            (row.merchant as any) || "—"
+            merchantName
           );
         },
-        getSearchableText: (row) => `${row.merchant as any}`,
+        getSearchableText: (row) => {
+          const name =
+            (row.merchant ? merchantMap.get(String(row.merchant)) : null) ||
+            row.merchant;
+          return name ? String(name) : "";
+        },
       },
       {
         key: "cc_comment",
@@ -472,7 +511,7 @@ export default function OrdersPage() {
             ?.display_name || "", // Searchable text
       },
     ],
-    [ccUsers, editingId, editForm, openModal, STATUS_LABELS, STATUS_STYLES],
+    [ccUsers, editingId, editForm, openModal, STATUS_LABELS, STATUS_STYLES, merchantMap],
   );
 
   const handleSave = async () => {
@@ -665,15 +704,21 @@ export default function OrdersPage() {
               setLoadingMore(true);
               const from = nextPage * PAGE_SIZE;
               const to = from + PAGE_SIZE - 1;
-              let q = supabase!.from("orders")
-                .select("id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, cc_comment, fom_delivery_status, extracted_by, status")
+              let q = supabase!
+                .from("orders")
+                .select(
+                  "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, cc_comment, fom_delivery_status, extracted_by, status",
+                )
                 .order("created_at", { ascending: false })
                 .range(from, to);
               if (filterMerchant) q = q.eq("merchant", filterMerchant);
               if (startDate) q = q.gte("created_at", `${startDate}T00:00:00Z`);
               if (endDate) q = q.lte("created_at", `${endDate}T23:59:59Z`);
               const { data } = await q;
-              if (data) { setOrders(prev => [...prev, ...data as Order[]]); setPage(nextPage); }
+              if (data) {
+                setOrders((prev) => [...prev, ...(data as Order[])]);
+                setPage(nextPage);
+              }
               setLoadingMore(false);
             }}
             loadingMore={loadingMore}
@@ -700,9 +745,9 @@ export default function OrdersPage() {
                 onChange={(e) => setModalValue(e.target.value)}
               >
                 <option value="">Select Merchant</option>
-                {merchantOptions.map((merchant) => (
-                  <option key={merchant} value={merchant}>
-                    {merchant}
+                {merchants.map((merchant) => (
+                  <option key={merchant.id} value={merchant.id}>
+                    {merchant.name}
                   </option>
                 ))}
               </select>

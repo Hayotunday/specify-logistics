@@ -31,6 +31,7 @@ export default function RiderPaymentsPage() {
   const { user } = useAuth();
   const [orders, setOrders] = useState<any[]>([]);
   const [ridersList, setRidersList] = useState<any[]>([]);
+  const [landmarks, setLandmarks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState(() => {
     const today = new Date();
@@ -130,20 +131,26 @@ export default function RiderPaymentsPage() {
       const endOfDay = new Date(startOfDay);
       endOfDay.setDate(endOfDay.getDate() + 1);
 
-      const { data, error } = await supabase!
-        .from("orders")
-        .select("id, rider_name, fom_delivery_status, payment_to_rider, customer_name, landmark, delivery_address, rider_assigned_at")
-        .not("rider_name", "is", null)
-        .gte("rider_assigned_at", startOfDay.toISOString())
-        .lt("rider_assigned_at", endOfDay.toISOString())
-        .order("rider_assigned_at", { ascending: false });
+      const [
+        { data: ordersData, error: ordersError },
+        { data: ridersData },
+        { data: landmarksData },
+      ] = await Promise.all([
+        supabase!
+          .from("orders")
+          .select("id, rider, fom_delivery_status, payment_to_rider, customer_name, landmark, delivery_address, rider_assigned_at")
+          .not("rider", "is", null)
+          .gte("rider_assigned_at", startOfDay.toISOString())
+          .lt("rider_assigned_at", endOfDay.toISOString())
+          .order("rider_assigned_at", { ascending: false }),
+        supabase!.from("riders").select("id, name, rider_type"),
+        supabase!.from("landmarks").select("id, name, price"),
+      ]);
 
-      if (error) throw error;
-      setOrders(data || []);
-
-      const { data: ridersData } = await supabase!.from("riders").select("name, rider_type");
+      if (ordersError) throw ordersError;
+      setOrders(ordersData || []);
       if (ridersData) setRidersList(ridersData);
-
+      if (landmarksData) setLandmarks(landmarksData);
     } catch (err) {
       toast.error("Failed to load rider data");
     } finally {
@@ -155,16 +162,34 @@ export default function RiderPaymentsPage() {
     fetchOrders();
   }, [fetchOrders]);
 
+  const riderMap = useMemo(() => {
+    const map = new Map<string, { name: string; rider_type?: string }>();
+    ridersList.forEach((r) => {
+      if (r.id && r.name) map.set(r.id, { name: r.name, rider_type: r.rider_type });
+      if (r.name) map.set(r.name, { name: r.name, rider_type: r.rider_type });
+    });
+    return map;
+  }, [ridersList]);
+
+  const landmarkMap = useMemo(() => {
+    const map = new Map<string, string>();
+    landmarks.forEach((l) => {
+      if (l.id && l.name) map.set(l.id, l.name);
+      if (l.name) map.set(l.name, l.name);
+    });
+    return map;
+  }, [landmarks]);
+
   const riderGroups = useMemo((): RiderEntry[] => {
     const map: Record<string, RiderEntry> = {};
 
     for (const order of orders) {
-      const rider = order.rider_name || "Unknown";
+      const riderInfo = riderMap.get(String(order.rider ?? ""));
+      const rider = riderInfo?.name || order.rider || "Unknown";
       if (!map[rider]) {
-        const foundRider = ridersList.find(r => r.name === rider);
         map[rider] = {
           rider,
-          rider_type: foundRider?.rider_type || "external",
+          rider_type: riderInfo?.rider_type || "external",
           deliveries: [],
           totalPay: 0,
           outstanding: outstandingMap[rider] || 0,
@@ -176,11 +201,12 @@ export default function RiderPaymentsPage() {
       const isDelivered = statusLower === "delivered";
       const fullLandmark = Number(order.payment_to_rider || 0);
       const riderPay = (isDelivered || isFailed) ? fullLandmark : 0;
+      const landmarkDisplayName = landmarkMap.get(String(order.landmark ?? "")) || order.landmark || order.delivery_address || "—";
 
       map[rider].deliveries.push({
         orderId: order.id,
         customer: order.customer_name,
-        landmark: order.landmark || order.delivery_address || "—",
+        landmark: landmarkDisplayName,
         status: order.fom_delivery_status || "pending",
         riderPay,
         isFailed,
@@ -194,7 +220,7 @@ export default function RiderPaymentsPage() {
       ...entry,
       outstanding: outstandingMap[entry.rider] || 0,
     }));
-  }, [orders, outstandingMap, ridersList]);
+  }, [orders, outstandingMap, riderMap, landmarkMap]);
 
   const grandTotal = useMemo(
     () => riderGroups.reduce((s, r) => s + r.totalPay - r.outstanding, 0),

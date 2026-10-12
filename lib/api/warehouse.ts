@@ -29,7 +29,7 @@ export async function fetchWarehouseOrders(
   const { startDate, endDate, filterMerchant, page = 0, pageSize = 100 } = options;
 
   let query = supabase.from("orders").select(
-    "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, wh_delivery_status, fom_assigned, warehouse_comment, cc_comment, extracted_by, status, prints",
+    "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, wh_delivery_status, fom_assigned, wh_comment, cc_comment, extracted_by, status, prints",
     { count: "exact" }
   );
 
@@ -77,7 +77,7 @@ export async function fetchOutOfStockOrders(
   const { startDate, endDate, filterMerchant, page = 0, pageSize = 100 } = options;
 
   let query = supabase.from("orders").select(
-    "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, wh_delivery_status, fom_assigned, warehouse_comment, cc_comment, extracted_by, status, prints",
+    "id, created_at, customer_name, delivery_address, phone_numbers, merchant, items, total_amount, inventory_status, wh_delivery_status, fom_assigned, wh_comment, cc_comment, extracted_by, status, prints",
     { count: "exact" }
   );
 

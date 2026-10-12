@@ -176,7 +176,7 @@ export default function PublicOrderTrackingPage() {
                     {getStatusBadge(order)}
                   </div>
                   <h2 className="text-xl md:text-2xl font-bold text-white font-mono mt-1">
-                    #{order.id.split("-")[0].toUpperCase()}
+                    #{order.id?.split("-")[0].toUpperCase() || ""}
                   </h2>
                 </div>
                 <div className="text-right">

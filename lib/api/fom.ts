@@ -30,7 +30,7 @@ export async function fetchFomOrders(
   const { userId, startDate, endDate, filterMerchant, page = 0, pageSize = 100 } = options;
 
   let query = supabase.from("orders").select(
-    "id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider_name, payment_to_rider, landmark, payment_method, fom_delivery_status, fom_comment, status, fom_assigned, inventory_status, merchant",
+    "id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider, payment_to_rider, landmark, payment_method, fom_delivery_status, fom_comment, status, fom_assigned, inventory_status, merchant",
     { count: "exact" }
   );
 
@@ -44,7 +44,7 @@ export async function fetchFomOrders(
   query = query
     .eq("fom_assigned", userId)
     .eq("status", "warehouse")
-    .is("rider_name", null)
+    .is("rider", null)
     .neq("inventory_status", "out-of-stock")
     .or("fom_delivery_status.is.null,fom_delivery_status.eq.pending");
 
@@ -81,7 +81,7 @@ export async function fetchFomAssignedOrders(
   const { userId, startDate, endDate, filterMerchant, page = 0, pageSize = 100 } = options;
 
   let query = supabase.from("orders").select(
-    "id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider_name, payment_to_rider, landmark, payment_method, fom_delivery_status, fom_comment, status, fom_assigned, inventory_status, merchant",
+    "id, created_at, fom_assigned_at, customer_name, delivery_address, items, total_amount, rider, payment_to_rider, landmark, payment_method, fom_delivery_status, fom_comment, status, fom_assigned, inventory_status, merchant",
     { count: "exact" }
   );
 
@@ -94,7 +94,7 @@ export async function fetchFomAssignedOrders(
 
   query = query
     .eq("fom_assigned", userId)
-    .not("rider_name", "is", null);
+    .not("rider", "is", null);
 
   if (filterMerchant) {
     query = query.eq("merchant", filterMerchant);
