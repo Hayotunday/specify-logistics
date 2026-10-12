@@ -528,6 +528,25 @@ create trigger stock_entries_set_updated_at
 before update on public.stock_entries for each row
 execute procedure public.set_updated_at ();
 
+-- merchants auto-activation upon full approval
+create or replace function public.check_merchant_approval_status () returns trigger language plpgsql as $$
+begin
+  if new.admin_approved is not null
+     and new.warehouse_approved is not null
+     and new.customer_service_approved is not null then
+    new.is_active := true;
+    new.approval_status := 'approved';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists merchants_check_approval_status on public.merchants;
+
+create trigger merchants_check_approval_status
+before insert or update on public.merchants for each row
+execute procedure public.check_merchant_approval_status ();
+
 
 -- get_global_stats function
 drop function if exists get_global_stats ();

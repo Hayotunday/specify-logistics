@@ -45,7 +45,7 @@ export async function createMerchant(
     .insert([
       {
         name,
-        is_active: true,
+        is_active: false,
         approval_status: "pending",
         submitted_by_role: submittedByRole,
         submitted_by: submittedBy,
@@ -290,9 +290,22 @@ export async function fetchPendingApprovals(): Promise<{
 export async function updateApprovalStatus(
   table: "merchants" | "products" | "stock_entries",
   id: string,
-  updates: Record<string, string | null>
+  updates: Record<string, any>
 ): Promise<void> {
   if (!supabase) return;
+
+  if (table === "merchants") {
+    const isFullyApproved =
+      !!updates.admin_approved &&
+      !!updates.warehouse_approved &&
+      !!updates.customer_service_approved;
+
+    if (isFullyApproved) {
+      updates.is_active = true;
+      updates.approval_status = "approved";
+    }
+  }
+
   const { error } = await supabase.from(table).update(updates).eq("id", id);
   if (error) {
     console.error(`Error updating approval status for ${table}:`, error);

@@ -33,7 +33,7 @@ export default function MerchantApprovalsPage() {
       const [merchantsRes, productsRes, stockRes] = await Promise.all([
         supabase!
           .from("merchants")
-          .select("id, name, submitted_by_role, admin_approved, warehouse_approved, customer_service_approved, approval_status")
+          .select("id, name, submitted_by_role, admin_approved, warehouse_approved, customer_service_approved, approval_status, is_active")
           .eq("approval_status", "pending"),
         supabase!
           .from("products")
@@ -77,10 +77,21 @@ export default function MerchantApprovalsPage() {
     const { data: { user } } = await supabase!.auth.getUser();
     const userId = user?.id ?? null;
 
-    const isNowAdminApproved = role === "admin" ? userId : item.admin_approved ?? null;
-    const isNowWarehouseApproved = role === "warehouse" ? userId : item.warehouse_approved ?? null;
+    // Fetch latest approval record from database to prevent race conditions across dashboard roles
+    const { data: currentRecord } = await supabase!
+      .from(table)
+      .select("admin_approved, warehouse_approved, customer_service_approved")
+      .eq("id", item.id)
+      .single();
+
+    const currentAdmin = currentRecord?.admin_approved ?? item.admin_approved ?? null;
+    const currentWarehouse = currentRecord?.warehouse_approved ?? item.warehouse_approved ?? null;
+    const currentCS = currentRecord?.customer_service_approved ?? item.customer_service_approved ?? null;
+
+    const isNowAdminApproved = role === "admin" ? userId : currentAdmin;
+    const isNowWarehouseApproved = role === "warehouse" ? userId : currentWarehouse;
     const isNowCustomerServiceApproved =
-      role === "customer_service" ? userId : item.customer_service_approved ?? null;
+      role === "customer_service" ? userId : currentCS;
     const isFullyApproved =
       !!isNowAdminApproved &&
       !!isNowWarehouseApproved &&
@@ -101,6 +112,10 @@ export default function MerchantApprovalsPage() {
       if (isFullyApproved) {
         updates.approval_status = "approved";
       }
+    }
+
+    if (table === "merchants" && isFullyApproved) {
+      updates.is_active = true;
     }
 
     try {
@@ -126,6 +141,9 @@ export default function MerchantApprovalsPage() {
       updates.status = "rejected";
     } else {
       updates.approval_status = "rejected";
+      if (table === "merchants") {
+        updates.is_active = false;
+      }
     }
 
     try {
@@ -189,12 +207,14 @@ export default function MerchantApprovalsPage() {
     admin,
     warehouse,
     customerService,
+    isActive,
   }: {
     admin: string | null;
     warehouse: string | null;
     customerService: string | null;
+    isActive?: boolean | null;
   }) => (
-    <div className="flex gap-2 text-[10px] font-semibold uppercase">
+    <div className="flex gap-2 text-[10px] font-semibold uppercase flex-wrap">
       <span
         className={`px-2 py-0.5 rounded-full ${admin ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}
       >
@@ -210,6 +230,13 @@ export default function MerchantApprovalsPage() {
       >
         CS: {customerService ? "Yes" : "No"}
       </span>
+      {typeof isActive === "boolean" && (
+        <span
+          className={`px-2 py-0.5 rounded-full ${isActive ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}
+        >
+          Active: {isActive ? "Yes" : "No"}
+        </span>
+      )}
     </div>
   );
 
@@ -307,6 +334,7 @@ export default function MerchantApprovalsPage() {
                           admin={merchant.admin_approved}
                           warehouse={merchant.warehouse_approved}
                           customerService={merchant.customer_service_approved}
+                          isActive={merchant.is_active}
                         />
                       </div>
                     </div>

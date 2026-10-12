@@ -67,7 +67,7 @@ export default function MerchantsProductsPage() {
     setLoading(true);
     const { data } = await supabase!
       .from("merchants")
-      .select("id, name, approval_status, created_at")
+      .select("id, name, is_active, approval_status, created_at")
       .order("created_at", { ascending: false });
     if (data) {
       setMerchants(data);
@@ -120,6 +120,7 @@ export default function MerchantsProductsPage() {
       approval_status: "pending",
       admin_approved: role === "admin" ? userId : null,
       warehouse_approved: role === "warehouse" ? userId : null,
+      customer_service_approved: role === "customer_service" ? userId : null,
       submitted_by: userId,
       submitted_by_role: role,
     };
@@ -130,14 +131,14 @@ export default function MerchantsProductsPage() {
     const approvalFields = await getApprovalFields();
     const { error } = await supabase!
       .from("merchants")
-      .insert([{ name: newMerchant, ...approvalFields }]);
+      .insert([{ name: newMerchant, is_active: false, ...approvalFields }]);
 
     if (error) toast.error("Failed to add merchant");
     else {
       toast.success(
         role === "guest"
-          ? "Merchant added — awaiting Admin & Warehouse approval"
-          : `Merchant added — awaiting ${role === "admin" ? "Warehouse" : "Admin"} approval`,
+          ? "Merchant added — awaiting Admin, Warehouse & CS approval"
+          : `Merchant added — awaiting required dashboard approvals`,
       );
       setNewMerchant("");
       fetchMerchants();
@@ -405,6 +406,15 @@ export default function MerchantsProductsPage() {
                           <StatusBadge
                             status={merchant.approval_status || "approved"}
                           />
+                          <span
+                            className={`flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                              merchant.is_active
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            {merchant.is_active ? "Active" : "Inactive"}
+                          </span>
                           {/* Product count badge */}
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                             <Package className="h-3 w-3" />
