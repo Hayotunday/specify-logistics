@@ -237,21 +237,12 @@ export default function FOMDashboard() {
       const isFailed = inputs.delivery_status?.toLowerCase() === "failed";
       const finalRiderPrice = isFailed ? riderPrice / 2 : riderPrice;
 
-      const selectedLandmark = landmarks.find(
-        (l) => l.id === inputs.landmark || l.name === inputs.landmark,
-      );
-      const landmarkPrice = selectedLandmark
-        ? Number(selectedLandmark.price)
-        : 0;
-      const paymentByMerchant = -landmarkPrice;
-
       try {
         await updateFomOrder(order.id!, {
           status: "fom",
           rider: inputs.rider || null,
           payment_to_rider: finalRiderPrice,
           landmark: inputs.landmark || null,
-          payment_to_merchant: paymentByMerchant,
           fom_delivery_status: inputs.delivery_status?.toLowerCase() as any,
           payment_method: inputs.payment_method?.toLowerCase() || null,
           fom_comment: inputs.fom_comment || null,

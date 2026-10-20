@@ -238,16 +238,8 @@ export default function FOMOrdersPage() {
   const handleSave = async () => {
     if (!editForm || !supabase) return;
 
-    const selectedLandmark = landmarks.find(
-      (l) => l.name === editForm.landmark,
-    );
-    const landmarkPrice = selectedLandmark ? Number(selectedLandmark.price) : 0;
-    const paymentToMerchant =
-      editForm.amount_paid !== null && editForm.amount_paid !== undefined
-        ? Number(editForm.amount_paid) - landmarkPrice
-        : 0;
-
     const originalOrder = orders.find((o) => o.id === editForm.id);
+
     const wasAlreadyDelivered =
       originalOrder?.fom_delivery_status?.toLowerCase() === "delivered" ||
       !!originalOrder?.delivered_at;
@@ -263,25 +255,6 @@ export default function FOMOrdersPage() {
 
     const isNewlyFinal = isNowFinal && !wasAlreadyFinal;
 
-    const isNewlyFailed =
-      editForm.fom_delivery_status?.toLowerCase() === "failed" &&
-      originalOrder?.fom_delivery_status?.toLowerCase() !== "failed";
-
-    const isUnFailed =
-      editForm.fom_delivery_status?.toLowerCase() !== "failed" &&
-      originalOrder?.fom_delivery_status?.toLowerCase() === "failed";
-
-    let paymentToRiderPayload = {};
-    if (isNewlyFailed) {
-      paymentToRiderPayload = {
-        payment_to_rider: Number(originalOrder?.payment_to_rider || 0) / 2,
-      };
-    } else if (isUnFailed) {
-      paymentToRiderPayload = {
-        payment_to_rider: Number(originalOrder?.payment_to_rider || 0) * 2,
-      };
-    }
-
     setIsSaving(true);
     setError(null);
 
@@ -295,9 +268,7 @@ export default function FOMOrdersPage() {
           quantity_delivered: editForm.quantity_delivered,
           amount_paid: editForm.amount_paid,
           fom_comment: editForm.fom_comment,
-          payment_to_merchant: paymentToMerchant,
           updated_at: new Date().toISOString(),
-          ...paymentToRiderPayload,
           ...(isNewlyFinal ? { delivered_at: new Date().toISOString() } : {}),
         })
         .eq("id", editForm.id);

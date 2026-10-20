@@ -547,6 +547,62 @@ create trigger merchants_check_approval_status
 before insert or update on public.merchants for each row
 execute procedure public.check_merchant_approval_status ();
 
+-- orders payment_to_merchant auto-calculation
+create or replace function public.calculate_payment_to_merchant()
+returns trigger language plpgsql as $$
+declare
+  v_landmark_price numeric(12, 2) := 0;
+begin
+  if new.landmark is not null then
+    select coalesce(price, 0) into v_landmark_price
+    from public.landmarks
+    where id = new.landmark;
+  end if;
+
+  if new.fom_delivery_status = 'delivered' then
+    new.payment_to_merchant := coalesce(new.amount_paid, 0) - v_landmark_price;
+  elsif new.fom_delivery_status = 'failed' then
+    new.payment_to_merchant := - (v_landmark_price / 2.0);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_calculate_payment_to_merchant on public.orders;
+
+create trigger orders_calculate_payment_to_merchant
+before insert or update on public.orders for each row
+execute procedure public.calculate_payment_to_merchant();
+
+-- orders payment_to_rider auto-calculation on failed status
+create or replace function public.calculate_payment_to_rider()
+returns trigger language plpgsql as $$
+begin
+  if TG_OP = 'INSERT' then
+    if new.fom_delivery_status = 'failed' and new.payment_to_rider is not null then
+      new.payment_to_rider := round(new.payment_to_rider / 2.0, 2);
+    end if;
+  elsif TG_OP = 'UPDATE' then
+    -- When status changes to 'failed', halve the payment_to_rider
+    if new.fom_delivery_status = 'failed' and (old.fom_delivery_status is distinct from 'failed') then
+      new.payment_to_rider := round(coalesce(old.payment_to_rider, new.payment_to_rider, 0) / 2.0, 2);
+    -- When status changes back from 'failed' to non-failed, restore the original rider fee (double it)
+    elsif old.fom_delivery_status = 'failed' and (new.fom_delivery_status is distinct from 'failed') then
+      new.payment_to_rider := round(coalesce(old.payment_to_rider, new.payment_to_rider, 0) * 2.0, 2);
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_calculate_payment_to_rider on public.orders;
+
+create trigger orders_calculate_payment_to_rider
+before insert or update on public.orders for each row
+execute procedure public.calculate_payment_to_rider();
+
 
 -- get_global_stats function
 drop function if exists get_global_stats ();
